@@ -34,6 +34,7 @@
 - `python -m ruff check src tests` → PASS.
 - `python -m pytest --cov=aelora_virtual_gateway --cov-report=term-missing --cov-fail-under=80` → 10 passed; 83.9% total coverage.
 - `python -m compileall -q src tests` → PASS.
+- `python -m pip_audit` → PASS: no known vulnerabilities after upgrading the isolated environment installer to pip 26.2.1; the local project itself is correctly skipped because it is not a PyPI package.
 - Local smoke test on `http://127.0.0.1:4100/api/state` → PASS.
 - End-to-end Aelora enrollment and persisted batch → PASS.
 

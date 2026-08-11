@@ -61,9 +61,10 @@ The server binds to `127.0.0.1` by default. Copy `.env.example` to `.env` only i
 .\.venv\Scripts\python.exe -m ruff check src tests
 $env:PYTHONPATH = "src"
 .\.venv\Scripts\python.exe -m pytest --cov=aelora_virtual_gateway --cov-fail-under=80
+.\.venv\Scripts\python.exe -m pip_audit
 ```
 
-Current result: 10 tests pass and total Python coverage is 83.9%.
+Current result: 10 tests pass, total Python coverage is 83.9%, lint passes, and the dependency audit finds no known vulnerabilities.
 
 ## Real-equipment transition
 

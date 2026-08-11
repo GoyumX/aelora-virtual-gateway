@@ -9,7 +9,7 @@ if (-not $python) {
 }
 
 & $python.Source -m venv .venv
-& .\.venv\Scripts\python.exe -m pip install --upgrade pip
+& .\.venv\Scripts\python.exe -m pip install --upgrade "pip>=26.1.2"
 & .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 
 Write-Output "Gateway environment is ready. Run .\scripts\start.ps1"
