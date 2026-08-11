@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from . import __version__
 from .models import (
     CredentialUpdate,
     DeviceControl,
@@ -66,7 +67,7 @@ def create_app(
                 await task
         runtime.close()
 
-    app = FastAPI(title="Aelora Virtual Gateway", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Aelora Virtual Gateway", version=__version__, lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", include_in_schema=False)
