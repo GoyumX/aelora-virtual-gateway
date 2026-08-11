@@ -1,9 +1,10 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
 from aelora_virtual_gateway.publisher import AeloraPublisher
+from aelora_virtual_gateway.runtime import GatewayRuntime
 from aelora_virtual_gateway.storage import StateStore
 
 
@@ -81,3 +82,33 @@ def test_heartbeat_reports_gateway_health_when_telemetry_publishing_is_paused(tm
     payload = json.loads(requests[0].content)
     assert payload["publishingEnabled"] is False
     assert payload["queueDepth"] == 2
+
+
+def test_heartbeat_restores_an_expired_scenario_while_publishing_is_paused(tmp_path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/gateways/gateway-1/heartbeats"
+        return httpx.Response(201, json={"data": {"accepted": True}})
+
+    store = StateStore(tmp_path / "gateway.db")
+    store.save_identity(
+        "gateway-1",
+        "credential",
+        "/api/v1/gateways/gateway-1/telemetry-batches",
+        "/api/v1/gateways/gateway-1/heartbeats",
+    )
+    runtime = GatewayRuntime(
+        store,
+        "http://aelora.test",
+        transport=httpx.MockTransport(handler),
+    )
+    runtime.plant.publishing_enabled = False
+    runtime.start_scenario(
+        "GRID_OUTAGE",
+        duration_sec=10,
+        now=datetime.now(UTC) - timedelta(seconds=20),
+    )
+
+    assert runtime.plant.grid.available is False
+    assert runtime.heartbeat_once() is True
+    assert runtime.plant.grid.available is True
+    assert runtime.scenario_state() is None
