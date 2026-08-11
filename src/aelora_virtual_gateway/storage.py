@@ -14,6 +14,7 @@ class GatewayIdentity:
     gateway_id: str
     credential: str
     telemetry_path: str
+    heartbeat_path: str = ""
 
 
 class StateStore:
@@ -69,9 +70,16 @@ class StateStore:
         if not raw:
             return None
         data = json.loads(raw)
+        data.setdefault("heartbeat_path", f"/api/v1/gateways/{data['gateway_id']}/heartbeats")
         return GatewayIdentity(**data)
 
-    def save_identity(self, gateway_id: str, credential: str, telemetry_path: str) -> None:
+    def save_identity(
+        self,
+        gateway_id: str,
+        credential: str,
+        telemetry_path: str,
+        heartbeat_path: str | None = None,
+    ) -> None:
         self._set(
             "identity",
             json.dumps(
@@ -79,9 +87,23 @@ class StateStore:
                     "gateway_id": gateway_id,
                     "credential": credential,
                     "telemetry_path": telemetry_path,
+                    "heartbeat_path": heartbeat_path
+                    or f"/api/v1/gateways/{gateway_id}/heartbeats",
                 }
             ),
         )
+
+    def update_credential(self, credential: str) -> bool:
+        identity = self.load_identity()
+        if not identity:
+            return False
+        self.save_identity(
+            identity.gateway_id,
+            credential,
+            identity.telemetry_path,
+            identity.heartbeat_path,
+        )
+        return True
 
     def next_sequence(self) -> int:
         with self._connect() as connection:

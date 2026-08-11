@@ -34,6 +34,8 @@
             <div class="panel-heading"><div><p class="eyebrow">Connection</p><h2>Aelora enrollment</h2></div><span id="enrollment-badge" class="badge warning">Not enrolled</span></div>
             <p class="muted">Create an enrollment in Aelora System Configuration, then paste the one-time token here.</p>
             <form id="enrollment-form" class="form-row"><label class="grow">One-time enrollment token<input id="enrollment-token" autocomplete="off" required /></label><button class="button primary" type="submit">Enroll gateway</button></form>
+            <form id="credential-form" class="form-row hidden"><label class="grow">Rotated gateway credential<input id="rotated-credential" autocomplete="off" required type="password" /></label><button class="button" type="submit">Apply rotation</button></form>
+            <button class="text-button" id="show-credential-form" type="button">I have a rotated credential</button>
             <dl class="details"><div><dt>Aelora URL</dt><dd id="aelora-url">—</dd></div><div><dt>Gateway ID</dt><dd id="gateway-id">—</dd></div><div><dt>Buffered batches</dt><dd id="pending-batches">0</dd></div></dl>
           </article>
 
@@ -56,6 +58,19 @@
             <label class="switch-row"><span><strong>Send data to Aelora</strong><small>Turning this off keeps simulating locally and makes Aelora become stale.</small></span><input id="publishing-enabled" type="checkbox" /></label>
             <label>Publish interval (seconds)<input id="publish-interval" type="number" min="10" max="3600" /></label>
             <button class="button primary full" id="save-publishing">Save publishing</button>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Timed controls</p><h2>Scenario runner</h2></div><span id="scenario-badge" class="badge warning">None</span></div>
+            <div class="form-grid scenario-grid"><label>Scenario<select id="scenario-code"><option>CLOUD_RAMP</option><option>RAIN_DAY</option><option>DIRTY_ARRAY</option><option>PARTIAL_SHADE</option><option>INVERTER_FAULT</option><option>BATTERY_LOW</option><option>GRID_OUTAGE</option></select></label><label>Duration (seconds)<input id="scenario-duration" type="number" min="10" max="86400" value="300" /></label></div>
+            <div class="device-actions"><button class="button primary" id="start-scenario" type="button">Start scenario</button><button class="button" id="stop-scenario" type="button">Stop and restore</button></div>
+            <p class="muted" id="scenario-detail">No timed scenario is active.</p>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Protocol inspector</p><h2>Last outbound request</h2></div><span class="badge">Secret redacted</span></div>
+            <p class="muted">This is the exact telemetry or heartbeat request shape sent to Aelora. Authorization remains hidden.</p>
+            <pre id="outbound-preview" class="payload-preview">No outbound request yet.</pre>
           </article>
 
           <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Plant devices</p><h2>Inverter, battery and grid</h2></div></div><div id="core-devices" class="device-list"></div></article>

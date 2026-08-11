@@ -52,6 +52,10 @@ function render() {
   $("publish-interval").value = plant.publishIntervalSec;
   $("publishing-badge").textContent = plant.publishingEnabled ? "Running" : "Paused";
   $("publishing-badge").className = `badge${plant.publishingEnabled ? "" : " warning"}`;
+  $("scenario-badge").textContent = state.scenario?.code?.replaceAll("_", " ") || "None";
+  $("scenario-badge").className = `badge${state.scenario ? "" : " warning"}`;
+  $("scenario-detail").textContent = state.scenario ? `Active until ${new Date(state.scenario.endsAt).toLocaleString()}. The baseline plant will be restored automatically.` : "No timed scenario is active.";
+  $("outbound-preview").textContent = state.outbound ? JSON.stringify(state.outbound, null, 2) : "No outbound request yet.";
   $("array-list").innerHTML = plant.arrays.map(arrayCard).join("");
   $("core-devices").innerHTML = [coreCard(plant.inverter, plant.inverter, ` · cap ${fmtPower(plant.inverter.maxAcPowerW)}`), coreCard(plant.battery, plant.battery, ` · ${plant.battery.stateOfChargePct.toFixed(0)}%`), coreCard(plant.grid, plant.grid)].join("");
 }
@@ -78,6 +82,10 @@ $("add-array-form").addEventListener("submit", async (event) => { event.preventD
 $("save-environment").addEventListener("click", async () => { try { await mutate("/api/environment", { weather: $("weather").value, hourOfDay: Number($("hour").value), ambientTemperatureC: Number($("temperature").value) }); await mutate("/api/load", { loadPowerW: Number($("load").value) }); notice("Virtual conditions applied."); } catch (error) { notice(error.message, true); } });
 $("save-publishing").addEventListener("click", async () => { try { await mutate("/api/publishing", { enabled: $("publishing-enabled").checked, intervalSec: Number($("publish-interval").value) }); notice("Publishing settings saved."); } catch (error) { notice(error.message, true); } });
 $("enrollment-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await mutate("/api/enroll", { token: $("enrollment-token").value }, "POST"); $("enrollment-token").value = ""; notice("Gateway enrolled with Aelora."); } catch (error) { notice(error.message, true); } });
+$("show-credential-form").addEventListener("click", () => $("credential-form").classList.toggle("hidden"));
+$("credential-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await mutate("/api/identity/credential", { credential: $("rotated-credential").value }); $("rotated-credential").value = ""; event.target.classList.add("hidden"); notice("Rotated credential saved locally. The next accepted request will activate it in Aelora."); } catch (error) { notice(error.message, true); } });
+$("start-scenario").addEventListener("click", async () => { try { await mutate("/api/scenarios", { code: $("scenario-code").value, durationSec: Number($("scenario-duration").value) }, "POST"); notice("Timed scenario started."); } catch (error) { notice(error.message, true); } });
+$("stop-scenario").addEventListener("click", async () => { try { await api("/api/scenarios/current", { method: "DELETE" }); await refresh(); notice("Scenario stopped and baseline restored."); } catch (error) { notice(error.message, true); } });
 $("tick-now").addEventListener("click", async () => { try { await api("/api/tick", { method: "POST" }); await refresh(); notice("Simulation advanced by one tick."); } catch (error) { notice(error.message, true); } });
 $("publish-now").addEventListener("click", async () => { try { const result = await api("/api/publish-now", { method: "POST" }); await refresh(); notice(result.published ? "Batch accepted by Aelora." : "Aelora unavailable; batch buffered locally.", !result.published); } catch (error) { notice(error.message, true); } });
 $("reset-plant").addEventListener("click", async () => { if (!confirm("Reset the virtual plant to defaults?")) return; try { await api("/api/reset", { method: "POST" }); await refresh(); notice("Virtual plant reset."); } catch (error) { notice(error.message, true); } });

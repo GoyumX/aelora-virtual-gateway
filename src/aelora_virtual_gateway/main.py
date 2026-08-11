@@ -14,12 +14,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .models import (
+    CredentialUpdate,
     DeviceControl,
     EnvironmentUpdate,
     LoadUpdate,
     PanelArray,
     PanelArrayCreate,
     PublishingUpdate,
+    ScenarioRequest,
 )
 from .runtime import GatewayRuntime
 from .storage import StateStore
@@ -33,15 +35,23 @@ class EnrollmentRequest(BaseModel):
 
 async def publisher_loop(runtime: GatewayRuntime) -> None:
     while True:
+        await asyncio.to_thread(runtime.heartbeat_once)
         if runtime.plant.publishing_enabled:
             await asyncio.to_thread(runtime.publish_once)
         await asyncio.sleep(runtime.plant.publish_interval_sec)
 
 
-def create_app(store: StateStore | None = None, *, start_publisher: bool = True) -> FastAPI:
+def create_app(
+    store: StateStore | None = None,
+    *,
+    start_publisher: bool = True,
+    transport: httpx.BaseTransport | None = None,
+) -> FastAPI:
     database_path = os.getenv("AELORA_GATEWAY_DB", "data/gateway.db")
     runtime = GatewayRuntime(
-        store or StateStore(database_path), os.getenv("AELORA_BASE_URL", "http://localhost:3000")
+        store or StateStore(database_path),
+        os.getenv("AELORA_BASE_URL", "http://localhost:3000"),
+        transport=transport,
     )
 
     @asynccontextmanager
@@ -75,6 +85,8 @@ def create_app(store: StateStore | None = None, *, start_publisher: bool = True)
                 "pendingBatches": runtime.store.pending_count(),
             },
             "latest": runtime.latest.model_dump(mode="json", by_alias=True) if runtime.latest else None,
+            "scenario": runtime.scenario_state(),
+            "outbound": runtime.publisher.outbound_preview,
         }
 
     @app.post("/api/tick")
@@ -160,6 +172,21 @@ def create_app(store: StateStore | None = None, *, start_publisher: bool = True)
         if not runtime.store.load_identity():
             raise HTTPException(status_code=409, detail="Enroll this gateway first.")
         return {"published": runtime.publish_once(), "pendingBatches": runtime.store.pending_count()}
+
+    @app.patch("/api/identity/credential")
+    def update_credential(payload: CredentialUpdate) -> dict:
+        if not runtime.update_credential(payload.credential):
+            raise HTTPException(status_code=409, detail="Enroll this gateway before applying a rotation.")
+        return {"updated": True}
+
+    @app.post("/api/scenarios", status_code=status.HTTP_201_CREATED)
+    def start_scenario(payload: ScenarioRequest) -> dict:
+        return runtime.start_scenario(payload.code, payload.duration_sec)
+
+    @app.delete("/api/scenarios/current")
+    def stop_scenario() -> dict:
+        runtime.stop_scenario()
+        return {"stopped": True}
 
     @app.post("/api/reset")
     def reset() -> dict:

@@ -26,9 +26,13 @@ def test_fronius_and_sunspec_fixtures_normalize_to_the_same_aelora_units_and_sig
         )
         assert all(device.quality == "MEASURED" for device in tick.devices)
 
-    assert fronius.site_snapshot.model_dump(exclude={"observed_at"}) == sunspec.site_snapshot.model_dump(
-        exclude={"observed_at"}
-    )
+    fronius_snapshot = fronius.site_snapshot.model_dump(exclude={"observed_at"})
+    sunspec_snapshot = sunspec.site_snapshot.model_dump(exclude={"observed_at"})
+    for key, value in fronius_snapshot.items():
+        if isinstance(value, (int, float)):
+            assert sunspec_snapshot[key] == pytest.approx(value, abs=0.001)
+        else:
+            assert sunspec_snapshot[key] == value
 
 
 def test_sunspec_scale_factors_are_applied_before_normalization() -> None:

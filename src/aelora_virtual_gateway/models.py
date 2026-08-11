@@ -121,6 +121,7 @@ class DeviceObservation(GatewayModel):
 
 
 class SimulationTick(GatewayModel):
+    source: Literal["VIRTUAL", "HARDWARE"] = "VIRTUAL"
     site_snapshot: SiteSnapshot
     devices: list[DeviceObservation]
 
@@ -134,7 +135,7 @@ class SimulationTick(GatewayModel):
             "gatewayId": gateway_id,
             "sequence": sequence,
             "sentAt": self.site_snapshot.observed_at.isoformat(),
-            "source": "VIRTUAL",
+            "source": self.source,
             "siteSnapshot": self.site_snapshot.model_dump(mode="json", by_alias=True),
             "devices": [device.model_dump(mode="json", by_alias=True) for device in self.devices],
         }
@@ -172,3 +173,23 @@ class PublishingUpdate(GatewayModel):
 
 class LoadUpdate(GatewayModel):
     load_power_w: int = Field(ge=0, le=1_000_000)
+
+
+class CredentialUpdate(GatewayModel):
+    credential: str = Field(min_length=32, max_length=256)
+
+
+ScenarioCode = Literal[
+    "CLOUD_RAMP",
+    "RAIN_DAY",
+    "DIRTY_ARRAY",
+    "PARTIAL_SHADE",
+    "INVERTER_FAULT",
+    "BATTERY_LOW",
+    "GRID_OUTAGE",
+]
+
+
+class ScenarioRequest(GatewayModel):
+    code: ScenarioCode
+    duration_sec: int = Field(default=300, ge=10, le=86_400)
