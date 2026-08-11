@@ -1,3 +1,4 @@
+import httpx
 from fastapi.testclient import TestClient
 
 from aelora_virtual_gateway.main import create_app
@@ -47,3 +48,69 @@ def test_operator_can_pause_cloud_publishing(tmp_path) -> None:
     assert response.status_code == 200
     assert state.json()["plant"]["publishingEnabled"] is False
     assert state.json()["plant"]["publishIntervalSec"] == 60
+
+
+def test_operator_can_apply_a_staged_credential_without_echoing_it(tmp_path) -> None:
+    store = StateStore(tmp_path / "gateway.db")
+    store.save_identity(
+        "gateway-1",
+        "old-credential-value-that-is-long-enough",
+        "/api/v1/gateways/gateway-1/telemetry-batches",
+        "/api/v1/gateways/gateway-1/heartbeats",
+    )
+    app = create_app(store, start_publisher=False)
+
+    with TestClient(app) as client:
+        response = client.patch(
+            "/api/identity/credential",
+            json={"credential": "new-credential-value-that-is-long-enough"},
+        )
+        state = client.get("/api/state")
+
+    assert response.status_code == 200
+    assert response.json() == {"updated": True}
+    assert store.load_identity().credential == "new-credential-value-that-is-long-enough"
+    assert "credential" not in str(state.json()).lower()
+
+
+def test_operator_sees_redacted_exact_outbound_request(tmp_path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/heartbeats"):
+            return httpx.Response(201, json={"data": {"accepted": True}})
+        return httpx.Response(202, json={"data": {"accepted": True}})
+
+    store = StateStore(tmp_path / "gateway.db")
+    store.save_identity(
+        "gateway-1",
+        "super-secret-gateway-credential-value",
+        "/api/v1/gateways/gateway-1/telemetry-batches",
+        "/api/v1/gateways/gateway-1/heartbeats",
+    )
+    app = create_app(store, start_publisher=False, transport=httpx.MockTransport(handler))
+
+    with TestClient(app) as client:
+        published = client.post("/api/publish-now")
+        state = client.get("/api/state").json()
+
+    assert published.status_code == 200
+    outbound = state["outbound"]
+    assert outbound["request"]["headers"]["Authorization"] == "Bearer <redacted>"
+    assert outbound["request"]["body"]["gatewayId"] == "gateway-1"
+    assert "super-secret" not in str(outbound)
+
+
+def test_operator_can_start_and_stop_a_timed_scenario(tmp_path) -> None:
+    app = create_app(StateStore(tmp_path / "gateway.db"), start_publisher=False)
+
+    with TestClient(app) as client:
+        started = client.post("/api/scenarios", json={"code": "GRID_OUTAGE", "durationSec": 60})
+        active = client.get("/api/state").json()
+        stopped = client.delete("/api/scenarios/current")
+        restored = client.get("/api/state").json()
+
+    assert started.status_code == 201
+    assert active["scenario"]["code"] == "GRID_OUTAGE"
+    assert active["plant"]["grid"]["available"] is False
+    assert stopped.status_code == 200
+    assert restored["scenario"] is None
+    assert restored["plant"]["grid"]["available"] is True

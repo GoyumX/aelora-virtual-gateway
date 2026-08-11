@@ -1,3 +1,6 @@
+import json
+from datetime import UTC, datetime
+
 import httpx
 
 from aelora_virtual_gateway.publisher import AeloraPublisher
@@ -47,3 +50,34 @@ def test_failed_batch_is_buffered_and_replayed_with_bearer_auth(tmp_path) -> Non
     assert store.pending_count() == 1
     assert publisher.flush_pending() == 1
     assert store.pending_count() == 0
+
+
+def test_heartbeat_reports_gateway_health_when_telemetry_publishing_is_paused(tmp_path) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json={"data": {"accepted": True}})
+
+    store = StateStore(tmp_path / "gateway.db")
+    store.save_identity(
+        "gateway-1",
+        "credential",
+        "/api/v1/gateways/gateway-1/telemetry-batches",
+        "/api/v1/gateways/gateway-1/heartbeats",
+    )
+    publisher = AeloraPublisher(store, "http://aelora.test", transport=httpx.MockTransport(handler))
+
+    assert publisher.heartbeat(
+        publishing_enabled=False,
+        queue_depth=2,
+        device_count=7,
+        heartbeat_id="52bcdd2b-cc48-4677-aac4-f987789724f5",
+        sent_at=datetime(2026, 8, 11, 10, 30, tzinfo=UTC),
+    ) is True
+
+    assert requests[0].url.path == "/api/v1/gateways/gateway-1/heartbeats"
+    assert requests[0].headers["Authorization"] == "Bearer credential"
+    payload = json.loads(requests[0].content)
+    assert payload["publishingEnabled"] is False
+    assert payload["queueDepth"] == 2

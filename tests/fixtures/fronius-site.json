@@ -1,0 +1,21 @@
+{
+  "inverter": {
+    "Head": { "Status": { "Code": 0, "Reason": "", "UserMessage": "" } },
+    "Body": {
+      "Data": {
+        "PAC": { "Unit": "W", "Values": { "1": 2450 } },
+        "DAY_ENERGY": { "Unit": "Wh", "Values": { "1": 12400 } },
+        "UAC": { "Unit": "V", "Values": { "1": 230 } },
+        "IAC": { "Unit": "A", "Values": { "1": 10.652173913 } },
+        "UDC": { "Unit": "V", "Values": { "1": 380 } },
+        "IDC": { "Unit": "A", "Values": { "1": 6.6 } },
+        "FAC": { "Unit": "Hz", "Values": { "1": 50 } },
+        "TEMPERATURE": { "Unit": "C", "Values": { "1": 44 } }
+      }
+    }
+  },
+  "meter": { "Body": { "Data": { "PowerReal_P_Sum": -500, "Voltage_AC_Phase_1": 230 } } },
+  "battery": { "Body": { "Data": { "Controller": { "StateOfCharge_Relative": 78, "PowerReal_PAC_Sum": -300 } } } },
+  "weather": { "irradianceWm2": 780, "panelTemperatureC": 49 },
+  "site": { "loadPowerW": 1650 }
+}

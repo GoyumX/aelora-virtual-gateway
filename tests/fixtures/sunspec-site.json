@@ -1,0 +1,25 @@
+{
+  "inverter": {
+    "externalId": "inverter-main",
+    "W": 2450,
+    "W_SF": 0,
+    "WH": 124,
+    "WH_SF": 2,
+    "ACV": 2300,
+    "ACV_SF": -1,
+    "ACA": 10652,
+    "ACA_SF": -3,
+    "DCV": 3800,
+    "DCV_SF": -1,
+    "DCA": 66,
+    "DCA_SF": -1,
+    "Hz": 500,
+    "Hz_SF": -1,
+    "TmpCab": 440,
+    "TmpCab_SF": -1
+  },
+  "meter": { "externalId": "grid-main", "W": -500, "W_SF": 0, "PhVphA": 2300, "V_SF": -1 },
+  "storage": { "externalId": "battery-main", "W": -300, "W_SF": 0, "ChaState": 780, "ChaState_SF": -1 },
+  "weather": { "irradianceWm2": 780, "panelTemperatureC": 49 },
+  "site": { "loadPowerW": 1650 }
+}
