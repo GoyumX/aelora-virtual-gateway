@@ -7,12 +7,15 @@ from aelora_virtual_gateway.storage import StateStore
 def test_operator_can_add_an_array_and_change_weather(tmp_path) -> None:
     app = create_app(StateStore(tmp_path / "gateway.db"), start_publisher=False)
     with TestClient(app) as client:
-        added = client.post("/api/arrays", json={
-            "externalId": "garage",
-            "name": "Garage array",
-            "panelCount": 6,
-            "ratedPowerW": 450,
-        })
+        added = client.post(
+            "/api/arrays",
+            json={
+                "externalId": "garage",
+                "name": "Garage array",
+                "panelCount": 6,
+                "ratedPowerW": 450,
+            },
+        )
         weather = client.patch("/api/environment", json={"weather": "RAINY", "hourOfDay": 12})
         state = client.get("/api/state")
 

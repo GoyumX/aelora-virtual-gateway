@@ -7,12 +7,17 @@ from aelora_virtual_gateway.storage import StateStore
 def test_enrollment_saves_gateway_identity_and_credential(tmp_path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/v1/gateway-enrollments"
-        return httpx.Response(200, json={"data": {
-            "gatewayId": "gateway-1",
-            "credential": "aelora_credential_secret",
-            "expectedIntervalSec": 30,
-            "telemetryPath": "/api/v1/gateways/gateway-1/telemetry-batches",
-        }})
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "gatewayId": "gateway-1",
+                    "credential": "aelora_credential_secret",
+                    "expectedIntervalSec": 30,
+                    "telemetryPath": "/api/v1/gateways/gateway-1/telemetry-batches",
+                }
+            },
+        )
 
     store = StateStore(tmp_path / "gateway.db")
     publisher = AeloraPublisher(store, "http://aelora.test", transport=httpx.MockTransport(handler))

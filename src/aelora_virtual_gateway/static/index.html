@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Local controls for the Aelora virtual solar-site gateway" />
+    <title>Aelora Virtual Gateway</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/"><span class="brand-mark">A</span><span>Aelora <small>Virtual Gateway</small></span></a>
+      <div class="top-status"><span id="gateway-dot" class="dot"></span><span id="gateway-status">Loading local gateway…</span></div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div><p class="eyebrow">Separate edge simulator</p><h1>Virtual solar plant control room</h1><p>Change the physical plant and its communications here. Aelora receives signed JSON batches exactly as it will from a future hardware gateway.</p></div>
+        <div class="hero-actions"><button class="button primary" id="publish-now">Publish now</button><button class="button" id="tick-now">Run one tick</button></div>
+      </section>
+
+      <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+      <section class="metrics" aria-label="Latest simulated measurements">
+        <article><span>Solar output</span><strong id="metric-solar">—</strong></article>
+        <article><span>Household load</span><strong id="metric-load">—</strong></article>
+        <article><span>Battery</span><strong id="metric-battery">—</strong></article>
+        <article><span>Grid flow</span><strong id="metric-grid">—</strong></article>
+      </section>
+
+      <div class="layout">
+        <section class="stack">
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Connection</p><h2>Aelora enrollment</h2></div><span id="enrollment-badge" class="badge warning">Not enrolled</span></div>
+            <p class="muted">Create an enrollment in Aelora System Configuration, then paste the one-time token here.</p>
+            <form id="enrollment-form" class="form-row"><label class="grow">One-time enrollment token<input id="enrollment-token" autocomplete="off" required /></label><button class="button primary" type="submit">Enroll gateway</button></form>
+            <dl class="details"><div><dt>Aelora URL</dt><dd id="aelora-url">—</dd></div><div><dt>Gateway ID</dt><dd id="gateway-id">—</dd></div><div><dt>Buffered batches</dt><dd id="pending-batches">0</dd></div></dl>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Weather and time</h2></div></div>
+            <div class="form-grid"><label>Weather<select id="weather"><option>SUNNY</option><option>PARTLY_CLOUDY</option><option>CLOUDY</option><option>RAINY</option><option>STORM</option></select></label><label>Hour of day <output id="hour-output">12:00</output><input id="hour" type="range" min="0" max="23.5" step="0.5" /></label><label>Ambient temperature °C<input id="temperature" type="number" min="-20" max="60" step="1" /></label><label>Household load W<input id="load" type="number" min="0" max="50000" step="100" /></label></div>
+            <button class="button primary" id="save-environment">Apply conditions</button>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Equipment</p><h2>Solar arrays</h2></div><button class="button" id="show-add-array">Add array</button></div>
+            <form class="add-array hidden" id="add-array-form"><label>Device ID<input id="array-id" required placeholder="garage-array" /></label><label>Name<input id="array-name" required placeholder="Garage roof" /></label><label>Panel count<input id="array-count" required type="number" min="1" value="6" /></label><label>Rated watts<input id="array-watts" required type="number" min="50" value="450" /></label><button class="button primary" type="submit">Create array</button></form>
+            <div id="array-list" class="device-list"></div>
+          </article>
+        </section>
+
+        <aside class="stack">
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Cloud publishing</p><h2>Publisher controls</h2></div><span id="publishing-badge" class="badge">Running</span></div>
+            <label class="switch-row"><span><strong>Send data to Aelora</strong><small>Turning this off keeps simulating locally and makes Aelora become stale.</small></span><input id="publishing-enabled" type="checkbox" /></label>
+            <label>Publish interval (seconds)<input id="publish-interval" type="number" min="10" max="3600" /></label>
+            <button class="button primary full" id="save-publishing">Save publishing</button>
+          </article>
+
+          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Plant devices</p><h2>Inverter, battery and grid</h2></div></div><div id="core-devices" class="device-list"></div></article>
+
+          <article class="panel danger-zone"><h2>Reset virtual plant</h2><p class="muted">Restore default arrays and operating conditions. Enrollment identity is kept.</p><button class="button danger" id="reset-plant">Reset plant state</button></article>
+        </aside>
+      </div>
+    </main>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

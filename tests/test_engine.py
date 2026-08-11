@@ -5,7 +5,6 @@ import pytest
 from aelora_virtual_gateway.engine import SimulationEngine
 from aelora_virtual_gateway.models import PanelArray, PlantState
 
-
 NOW = datetime(2026, 8, 11, 6, 30, tzinfo=UTC)
 
 
