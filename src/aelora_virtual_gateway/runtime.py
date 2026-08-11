@@ -53,8 +53,9 @@ class GatewayRuntime:
         return self.publisher.publish(batch)
 
     def heartbeat_once(self) -> bool:
-        if not self.latest:
-            self.tick()
+        now = datetime.now(UTC)
+        if not self.latest or (self.scenario_ends_at and now >= self.scenario_ends_at):
+            self.tick(now)
         return self.publisher.heartbeat(
             publishing_enabled=self.plant.publishing_enabled,
             queue_depth=self.store.pending_count(),
