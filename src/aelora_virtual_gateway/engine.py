@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from datetime import UTC, datetime
+import random
+from datetime import UTC, date, datetime, tzinfo
 
 from .models import DeviceObservation, PlantState, SimulationTick, SiteSnapshot
 
@@ -15,20 +16,66 @@ WEATHER_FACTOR = {
 
 
 class SimulationEngine:
-    def __init__(self, state: PlantState) -> None:
+    def __init__(self, state: PlantState, *, local_timezone: tzinfo | None = None) -> None:
         self.state = state
+        self.local_timezone = local_timezone or datetime.now().astimezone().tzinfo or UTC
         self._last_telemetry: dict[str, datetime] = {}
         self._energy_today_wh = 0.0
+        self._energy_date: date | None = None
+        self._last_energy_tick_at: datetime | None = None
+
+    def local_time(self, observed_at: datetime) -> datetime:
+        return observed_at.astimezone(self.local_timezone)
+
+    def effective_hour(self, observed_at: datetime) -> float:
+        if self.state.environment.clock_mode == "MANUAL":
+            return self.state.environment.hour_of_day
+        local = self.local_time(observed_at)
+        return local.hour + local.minute / 60 + local.second / 3_600
+
+    def _interval_random(self, observed_at: datetime, channel: str) -> random.Random:
+        slot = int(observed_at.timestamp()) // self.state.publish_interval_sec
+        seed = f"{self.state.environment.variation_seed}:{slot}:{channel}"
+        return random.Random(seed)
+
+    def _dynamic_value(
+        self,
+        observed_at: datetime,
+        channel: str,
+        minimum: float,
+        maximum: float,
+    ) -> float:
+        if minimum == maximum:
+            return minimum
+        return self._interval_random(observed_at, channel).uniform(minimum, maximum)
+
+    def _integration_hours(self, observed_at: datetime) -> float:
+        local_date = self.local_time(observed_at).date()
+        if self._energy_date != local_date:
+            self._energy_today_wh = 0.0
+            self._energy_date = local_date
+            self._last_energy_tick_at = None
+        if self._last_energy_tick_at is None:
+            seconds = self.state.publish_interval_sec
+        else:
+            elapsed = (observed_at - self._last_energy_tick_at).total_seconds()
+            seconds = min(max(0.0, elapsed), self.state.publish_interval_sec * 2)
+        if self._last_energy_tick_at is None or observed_at > self._last_energy_tick_at:
+            self._last_energy_tick_at = observed_at
+        return seconds / 3_600
 
     def tick(self, observed_at: datetime | None = None) -> SimulationTick:
         now = observed_at or datetime.now(UTC)
         environment = self.state.environment
-        daylight = max(0.0, math.sin(((environment.hour_of_day - 6) / 12) * math.pi))
-        irradiance = (
-            environment.manual_irradiance_wm2
-            if environment.manual_irradiance_wm2 is not None
-            else round(1_000 * daylight * WEATHER_FACTOR[environment.weather])
-        )
+        effective_hour = self.effective_hour(now)
+        daylight = max(0.0, math.sin(((effective_hour - 6) / 12) * math.pi))
+        if environment.manual_irradiance_wm2 is not None:
+            irradiance = environment.manual_irradiance_wm2
+        else:
+            clear_irradiance = 1_000 * daylight * WEATHER_FACTOR[environment.weather]
+            cloud_floor = max(0.0, 1 - environment.cloud_variability_pct / 100)
+            cloud_factor = self._dynamic_value(now, "cloud", cloud_floor, 1.0)
+            irradiance = round(clear_irradiance * cloud_factor)
 
         array_power: dict[str, float] = {}
         for array in self.state.arrays:
@@ -49,7 +96,16 @@ class SimulationEngine:
         if not self.state.inverter.operating:
             pv_power = 0.0
 
-        demand = float(self.state.load_power_w)
+        demand = (
+            self._dynamic_value(
+                now,
+                "household-load",
+                self.state.load_min_power_w,
+                self.state.load_max_power_w,
+            )
+            if self.state.load_mode == "DYNAMIC"
+            else float(self.state.load_power_w)
+        )
         battery_power = 0.0
         battery = self.state.battery
         if battery.operating:
@@ -64,7 +120,7 @@ class SimulationEngine:
             grid_power = 0.0
             served_load = max(0.0, pv_power + battery_power)
 
-        hours = self.state.publish_interval_sec / 3_600
+        hours = self._integration_hours(now)
         self._energy_today_wh += pv_power * hours
         if battery.capacity_wh > 0:
             battery.state_of_charge_pct = min(
@@ -77,6 +133,22 @@ class SimulationEngine:
 
         dc_voltage = 380.0 if dc_power > 0 else 0.0
         ac_voltage = 230.0 if self.state.inverter.operating else 0.0
+        grid_voltage = 0.0
+        frequency = 0.0
+        if self.state.grid.available:
+            voltage_variation = self.state.grid.voltage_v * self.state.grid.voltage_variability_pct / 100
+            grid_voltage = self._dynamic_value(
+                now,
+                "grid-voltage",
+                max(0.0, self.state.grid.voltage_v - voltage_variation),
+                self.state.grid.voltage_v + voltage_variation,
+            )
+            frequency = self._dynamic_value(
+                now,
+                "grid-frequency",
+                max(0.0, self.state.grid.frequency_hz - self.state.grid.frequency_variability_hz),
+                self.state.grid.frequency_hz + self.state.grid.frequency_variability_hz,
+            )
         device_status = self._device_status()
         snapshot = SiteSnapshot(
             observed_at=now,
@@ -90,8 +162,8 @@ class SimulationEngine:
             dc_current_a=round(dc_power / dc_voltage, 2) if dc_voltage else 0,
             ac_voltage_v=ac_voltage,
             ac_current_a=round(pv_power / ac_voltage, 2) if ac_voltage else 0,
-            grid_voltage_v=self.state.grid.voltage_v if self.state.grid.available else 0,
-            frequency_hz=self.state.grid.frequency_hz if self.state.grid.available else 0,
+            grid_voltage_v=round(grid_voltage, 2),
+            frequency_hz=round(frequency, 3),
             inverter_temperature_c=round(
                 environment.ambient_temperature_c
                 + (pv_power / max(1, self.state.inverter.max_ac_power_w)) * 18,
@@ -197,7 +269,12 @@ class SimulationEngine:
                     communications_enabled=True,
                     operational_state="RUNNING",
                     now=now,
-                    metrics={"powerW": snapshot.load_power_w},
+                    metrics={
+                        "powerW": snapshot.load_power_w,
+                        "mode": self.state.load_mode,
+                        "minimumPowerW": self.state.load_min_power_w,
+                        "maximumPowerW": self.state.load_max_power_w,
+                    },
                 ),
                 self._observation(
                     external_id="weather-sensor",
@@ -209,6 +286,8 @@ class SimulationEngine:
                     metrics={
                         "irradianceWm2": snapshot.irradiance_wm2,
                         "weather": self.state.environment.weather,
+                        "effectiveHour": round(self.effective_hour(now), 3),
+                        "cloudVariabilityPct": self.state.environment.cloud_variability_pct,
                     },
                 ),
             ]

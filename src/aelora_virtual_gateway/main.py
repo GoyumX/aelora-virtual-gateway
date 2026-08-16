@@ -11,10 +11,11 @@ import httpx
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from . import __version__
 from .models import (
+    BatteryUpdate,
     CredentialUpdate,
     DeviceControl,
     EnvironmentUpdate,
@@ -79,6 +80,7 @@ def create_app(
         identity = runtime.store.load_identity()
         return {
             "plant": runtime.plant.model_dump(mode="json", by_alias=True),
+            "clock": runtime.clock_state(),
             "gateway": {
                 "enrolled": identity is not None,
                 "gatewayId": identity.gateway_id if identity else None,
@@ -114,11 +116,14 @@ def create_app(
 
     @app.patch("/api/environment")
     def update_environment(payload: EnvironmentUpdate) -> dict:
-        for key, value in payload.model_dump(exclude_unset=True).items():
-            setattr(runtime.plant.environment, key, value)
-        runtime.save()
-        runtime.tick()
-        return runtime.plant.environment.model_dump(mode="json", by_alias=True)
+        try:
+            environment = runtime.update_environment(payload.model_dump(exclude_unset=True))
+        except ValidationError as error:
+            raise HTTPException(
+                status_code=422,
+                detail=error.errors(include_url=False, include_context=False),
+            ) from error
+        return environment.model_dump(mode="json", by_alias=True)
 
     @app.patch("/api/devices/{external_id}/control")
     def update_device(external_id: str, payload: DeviceControl) -> dict:
@@ -152,10 +157,30 @@ def create_app(
 
     @app.patch("/api/load")
     def update_load(payload: LoadUpdate) -> dict:
-        runtime.plant.load_power_w = payload.load_power_w
-        runtime.save()
-        runtime.tick()
-        return {"loadPowerW": runtime.plant.load_power_w}
+        try:
+            plant = runtime.update_load(payload.model_dump(exclude_unset=True))
+        except ValidationError as error:
+            raise HTTPException(
+                status_code=422,
+                detail=error.errors(include_url=False, include_context=False),
+            ) from error
+        return {
+            "loadMode": plant.load_mode,
+            "loadPowerW": plant.load_power_w,
+            "loadMinPowerW": plant.load_min_power_w,
+            "loadMaxPowerW": plant.load_max_power_w,
+        }
+
+    @app.patch("/api/battery")
+    def update_battery(payload: BatteryUpdate) -> dict:
+        try:
+            battery = runtime.update_battery(payload.model_dump(exclude_unset=True))
+        except ValidationError as error:
+            raise HTTPException(
+                status_code=422,
+                detail=error.errors(include_url=False, include_context=False),
+            ) from error
+        return battery.model_dump(mode="json", by_alias=True)
 
     @app.post("/api/enroll")
     def enroll(payload: EnrollmentRequest) -> dict:

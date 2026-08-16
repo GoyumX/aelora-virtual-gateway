@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def to_camel(value: str) -> str:
@@ -48,6 +48,12 @@ class Battery(GatewayModel):
     communications_enabled: bool = True
     operating: bool = True
 
+    @model_validator(mode="after")
+    def validate_soc_window(self) -> Battery:
+        if self.min_soc_pct > self.max_soc_pct:
+            raise ValueError("Minimum battery state of charge cannot exceed the maximum.")
+        return self
+
 
 class Grid(GatewayModel):
     external_id: str = "grid-main"
@@ -56,16 +62,23 @@ class Grid(GatewayModel):
     communications_enabled: bool = True
     voltage_v: float = Field(default=230, ge=0, le=500)
     frequency_hz: float = Field(default=50, ge=0, le=100)
+    voltage_variability_pct: float = Field(default=0.6, ge=0, le=10)
+    frequency_variability_hz: float = Field(default=0.04, ge=0, le=5)
 
 
 Weather = Literal["SUNNY", "PARTLY_CLOUDY", "CLOUDY", "RAINY", "STORM"]
+ClockMode = Literal["SYSTEM", "MANUAL"]
+LoadMode = Literal["FIXED", "DYNAMIC"]
 
 
 class Environment(GatewayModel):
     weather: Weather = "SUNNY"
+    clock_mode: ClockMode = "SYSTEM"
     hour_of_day: float = Field(default=12, ge=0, le=23.99)
     ambient_temperature_c: float = Field(default=29, ge=-50, le=80)
     manual_irradiance_wm2: int | None = Field(default=None, ge=0, le=1_500)
+    cloud_variability_pct: float = Field(default=22, ge=0, le=90)
+    variation_seed: int = Field(default=812, ge=0, le=2_147_483_647)
 
 
 class PlantState(GatewayModel):
@@ -75,8 +88,17 @@ class PlantState(GatewayModel):
     grid: Grid = Field(default_factory=Grid)
     environment: Environment = Field(default_factory=Environment)
     load_power_w: int = Field(default=2_200, ge=0, le=1_000_000)
+    load_mode: LoadMode = "DYNAMIC"
+    load_min_power_w: int = Field(default=1_800, ge=0, le=1_000_000)
+    load_max_power_w: int = Field(default=3_200, ge=0, le=1_000_000)
     publishing_enabled: bool = True
     publish_interval_sec: int = Field(default=30, ge=10, le=3_600)
+
+    @model_validator(mode="after")
+    def validate_load_range(self) -> PlantState:
+        if self.load_min_power_w > self.load_max_power_w:
+            raise ValueError("Minimum household load cannot exceed the maximum.")
+        return self
 
     @classmethod
     def default(cls) -> PlantState:
@@ -150,9 +172,12 @@ class PanelArrayCreate(GatewayModel):
 
 class EnvironmentUpdate(GatewayModel):
     weather: Weather | None = None
+    clock_mode: ClockMode | None = None
     hour_of_day: float | None = Field(default=None, ge=0, le=23.99)
     ambient_temperature_c: float | None = Field(default=None, ge=-50, le=80)
     manual_irradiance_wm2: int | None = Field(default=None, ge=0, le=1_500)
+    cloud_variability_pct: float | None = Field(default=None, ge=0, le=90)
+    variation_seed: int | None = Field(default=None, ge=0, le=2_147_483_647)
 
 
 class DeviceControl(GatewayModel):
@@ -164,6 +189,10 @@ class DeviceControl(GatewayModel):
     available: bool | None = None
     max_ac_power_w: int | None = Field(default=None, ge=100, le=1_000_000)
     state_of_charge_pct: float | None = Field(default=None, ge=0, le=100)
+    voltage_v: float | None = Field(default=None, ge=0, le=500)
+    frequency_hz: float | None = Field(default=None, ge=0, le=100)
+    voltage_variability_pct: float | None = Field(default=None, ge=0, le=10)
+    frequency_variability_hz: float | None = Field(default=None, ge=0, le=5)
 
 
 class PublishingUpdate(GatewayModel):
@@ -172,7 +201,39 @@ class PublishingUpdate(GatewayModel):
 
 
 class LoadUpdate(GatewayModel):
-    load_power_w: int = Field(ge=0, le=1_000_000)
+    load_power_w: int | None = Field(default=None, ge=0, le=1_000_000)
+    load_mode: LoadMode | None = None
+    load_min_power_w: int | None = Field(default=None, ge=0, le=1_000_000)
+    load_max_power_w: int | None = Field(default=None, ge=0, le=1_000_000)
+
+    @model_validator(mode="after")
+    def validate_supplied_range(self) -> LoadUpdate:
+        if (
+            self.load_min_power_w is not None
+            and self.load_max_power_w is not None
+            and self.load_min_power_w > self.load_max_power_w
+        ):
+            raise ValueError("Minimum household load cannot exceed the maximum.")
+        return self
+
+
+class BatteryUpdate(GatewayModel):
+    capacity_wh: int | None = Field(default=None, ge=100, le=5_000_000)
+    state_of_charge_pct: float | None = Field(default=None, ge=0, le=100)
+    min_soc_pct: float | None = Field(default=None, ge=0, le=100)
+    max_soc_pct: float | None = Field(default=None, ge=0, le=100)
+    max_charge_power_w: int | None = Field(default=None, ge=0, le=1_000_000)
+    max_discharge_power_w: int | None = Field(default=None, ge=0, le=1_000_000)
+
+    @model_validator(mode="after")
+    def validate_supplied_soc_window(self) -> BatteryUpdate:
+        if (
+            self.min_soc_pct is not None
+            and self.max_soc_pct is not None
+            and self.min_soc_pct > self.max_soc_pct
+        ):
+            raise ValueError("Minimum battery state of charge cannot exceed the maximum.")
+        return self
 
 
 class CredentialUpdate(GatewayModel):
@@ -181,12 +242,20 @@ class CredentialUpdate(GatewayModel):
 
 ScenarioCode = Literal[
     "CLOUD_RAMP",
+    "PASSING_CLOUDS",
     "RAIN_DAY",
     "DIRTY_ARRAY",
     "PARTIAL_SHADE",
     "INVERTER_FAULT",
+    "INVERTER_CLIPPING",
+    "INVERTER_COMMS_LOSS",
     "BATTERY_LOW",
+    "BATTERY_DRAIN",
     "GRID_OUTAGE",
+    "GRID_VOLTAGE_SAG",
+    "LOAD_SPIKE",
+    "LOAD_DROP",
+    "NIGHT_PREVIEW",
 ]
 
 

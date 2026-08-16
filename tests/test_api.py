@@ -1,3 +1,5 @@
+from html import unescape
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -216,7 +218,7 @@ def test_console_exposes_clock_load_range_battery_and_expanded_scenario_controls
     app = create_app(StateStore(tmp_path / "gateway.db"), start_publisher=False)
 
     with TestClient(app) as client:
-        html = client.get("/").text
+        html = unescape(client.get("/").text)
 
     assert "Computer date & time" in html
     assert "Minimum household load" in html

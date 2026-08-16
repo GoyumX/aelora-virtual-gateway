@@ -22,6 +22,7 @@
       <div id="notice" class="notice" role="status" aria-live="polite"></div>
 
       <section class="metrics" aria-label="Latest simulated measurements">
+        <article class="clock-metric"><span>Computer date &amp; time</span><strong id="metric-time">—</strong><small id="metric-date">—</small></article>
         <article><span>Solar output</span><strong id="metric-solar">—</strong></article>
         <article><span>Household load</span><strong id="metric-load">—</strong></article>
         <article><span>Battery</span><strong id="metric-battery">—</strong></article>
@@ -41,8 +42,16 @@
 
           <article class="panel">
             <div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Weather and time</h2></div></div>
-            <div class="form-grid"><label>Weather<select id="weather"><option>SUNNY</option><option>PARTLY_CLOUDY</option><option>CLOUDY</option><option>RAINY</option><option>STORM</option></select></label><label>Hour of day <output id="hour-output">12:00</output><input id="hour" type="range" min="0" max="23.5" step="0.5" /></label><label>Ambient temperature °C<input id="temperature" type="number" min="-20" max="60" step="1" /></label><label>Household load W<input id="load" type="number" min="0" max="50000" step="100" /></label></div>
+            <p class="muted">System clock follows this computer automatically. Switch to manual only when you want to preview another time of day.</p>
+            <div class="form-grid"><label>Clock source<select id="clock-mode"><option value="SYSTEM">Computer clock</option><option value="MANUAL">Manual preview</option></select></label><label id="manual-hour-label">Manual hour <output id="hour-output">12:00</output><input id="hour" type="range" min="0" max="23.5" step="0.5" /></label><label>Weather<select id="weather"><option>SUNNY</option><option>PARTLY_CLOUDY</option><option>CLOUDY</option><option>RAINY</option><option>STORM</option></select></label><label>Cloud variability %<input id="cloud-variability" type="number" min="0" max="90" step="1" /></label><label>Ambient temperature °C<input id="temperature" type="number" min="-20" max="60" step="1" /></label><label>Variation seed<input id="variation-seed" type="number" min="0" max="2147483647" step="1" /></label></div>
             <button class="button primary" id="save-environment">Apply conditions</button>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Demand dynamics</p><h2>Household intake range</h2></div><span class="badge">30-second variation</span></div>
+            <p class="muted">Dynamic mode chooses a reproducible value inside your range for every publishing interval. Grid import/export then changes naturally from solar + battery − household demand.</p>
+            <div class="form-grid"><label>Demand mode<select id="load-mode"><option value="DYNAMIC">Dynamic range</option><option value="FIXED">Fixed value</option></select></label><label>Fixed household load (W)<input id="load-fixed" type="number" min="0" max="1000000" step="100" /></label><label>Minimum household load (W)<input id="load-min" type="number" min="0" max="1000000" step="100" /></label><label>Maximum household load (W)<input id="load-max" type="number" min="0" max="1000000" step="100" /></label></div>
+            <button class="button primary" id="save-load">Save household dynamics</button>
           </article>
 
           <article class="panel">
@@ -62,9 +71,17 @@
 
           <article class="panel">
             <div class="panel-heading"><div><p class="eyebrow">Timed controls</p><h2>Scenario runner</h2></div><span id="scenario-badge" class="badge warning">None</span></div>
-            <div class="form-grid scenario-grid"><label>Scenario<select id="scenario-code"><option>CLOUD_RAMP</option><option>RAIN_DAY</option><option>DIRTY_ARRAY</option><option>PARTIAL_SHADE</option><option>INVERTER_FAULT</option><option>BATTERY_LOW</option><option>GRID_OUTAGE</option></select></label><label>Duration (seconds)<input id="scenario-duration" type="number" min="10" max="86400" value="300" /></label></div>
+            <div class="form-grid scenario-grid"><label>Scenario<select id="scenario-code"><option value="CLOUD_RAMP">Cloud ramp</option><option value="PASSING_CLOUDS">Passing clouds</option><option value="RAIN_DAY">Rainy day</option><option value="DIRTY_ARRAY">Dirty array</option><option value="PARTIAL_SHADE">Partial shade</option><option value="LOAD_SPIKE">Household load spike</option><option value="LOAD_DROP">Household load drop</option><option value="INVERTER_CLIPPING">Inverter clipping</option><option value="INVERTER_FAULT">Inverter fault</option><option value="INVERTER_COMMS_LOSS">Inverter communications loss</option><option value="BATTERY_LOW">Battery low</option><option value="BATTERY_DRAIN">Battery drain window</option><option value="GRID_VOLTAGE_SAG">Grid voltage sag</option><option value="GRID_OUTAGE">Grid outage</option><option value="NIGHT_PREVIEW">Night preview</option></select></label><label>Duration (seconds)<input id="scenario-duration" type="number" min="10" max="86400" value="300" /></label></div>
             <div class="device-actions"><button class="button primary" id="start-scenario" type="button">Start scenario</button><button class="button" id="stop-scenario" type="button">Stop and restore</button></div>
             <p class="muted" id="scenario-detail">No timed scenario is active.</p>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Storage &amp; utility</p><h2>Battery and grid dynamics</h2></div></div>
+            <p class="muted">Battery energy capacity controls how quickly its percentage changes. Grid power is never random by itself—it is calculated from the balanced site flow.</p>
+            <div class="form-grid"><label>Battery capacity (kWh)<input id="battery-capacity" type="number" min="0.1" max="5000" step="0.1" /></label><label>Battery percentage (SoC)<input id="battery-soc" type="number" min="0" max="100" step="0.1" /></label><label>Minimum reserve %<input id="battery-min-soc" type="number" min="0" max="100" step="1" /></label><label>Maximum charge target %<input id="battery-max-soc" type="number" min="0" max="100" step="1" /></label><label>Maximum charging (kW)<input id="battery-charge-power" type="number" min="0" max="1000" step="0.1" /></label><label>Maximum discharging (kW)<input id="battery-discharge-power" type="number" min="0" max="1000" step="0.1" /></label></div>
+            <button class="button primary full" id="save-battery">Save battery</button>
+            <div class="subsection"><h3>Grid signal variation</h3><div class="form-grid"><label>Nominal grid voltage (V)<input id="grid-voltage" type="number" min="0" max="500" step="0.1" /></label><label>Voltage variability %<input id="grid-voltage-variability" type="number" min="0" max="10" step="0.1" /></label><label>Nominal frequency (Hz)<input id="grid-frequency" type="number" min="0" max="100" step="0.01" /></label><label>Frequency variability (Hz)<input id="grid-frequency-variability" type="number" min="0" max="5" step="0.01" /></label></div><button class="button full" id="save-grid">Save grid dynamics</button></div>
           </article>
 
           <article class="panel">
