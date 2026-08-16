@@ -7,8 +7,10 @@ It provides:
 - a local control console at `http://localhost:4100`;
 - virtual arrays, inverter, battery, grid, load meter, and weather sensor;
 - independent communications and operating controls;
-- manual weather, time, load, efficiency, shading, soiling, grid-outage, and publishing controls;
-- timed cloud, rain, dirty-array, shade, inverter, battery, and grid-outage scenarios with automatic restoration;
+- computer-local date/time by default, plus a manual time-of-day preview for controlled demos;
+- seeded 30-second cloud, household-load, grid-voltage, and grid-frequency variation;
+- fixed or min/max household demand, battery capacity/SoC/power limits, weather, efficiency, shading, soiling, grid-outage, and publishing controls;
+- timed cloud, rain, load, dirty-array, shade, inverter, battery, night, and grid scenarios with automatic restoration;
 - carried battery state of charge, inverter clipping, and balanced site power flow;
 - one-time enrollment with Aelora and a long-lived bearer credential stored only in the local SQLite database;
 - a separate heartbeat stream that stays active when telemetry publishing is paused;
@@ -59,6 +61,10 @@ When Aelora rotates a credential, paste the newly issued credential into **Rotat
 | Turn a device's communications off | Only that device reports offline; its last telemetry timestamp is preserved |
 | Stop device operation with communications on | Device remains online and reports `STOPPED` or `FAULT` |
 | Select rain/night or add shade/soiling | Device remains online with legitimately reduced production |
+| Set a household min/max range | Each telemetry interval gets a reproducible demand inside the range |
+| Change cloud variability | PV changes naturally by interval while remaining bounded by weather and daylight |
+| Change battery capacity or SoC | Capacity changes the SoC response rate; SoC sets the current stored-energy state |
+| Change grid signal variability | Voltage/frequency fluctuate around their configured nominal values; power remains balance-derived |
 | Trigger grid outage | Grid remains communicative but reports a fault, zero voltage, and zero grid flow |
 | Start a timed scenario | The selected condition applies for the requested duration and then restores the previous plant state, even while telemetry is paused |
 
@@ -71,7 +77,7 @@ $env:PYTHONPATH = "src"
 .\.venv\Scripts\pip-audit.exe --skip-editable
 ```
 
-Current result: 17 tests pass, total Python coverage is 88.5%, lint and bytecode compilation pass, and the dependency audit finds no known vulnerabilities.
+Current result: 33 tests pass, total Python coverage is 89.97%, lint and bytecode compilation pass, and the dependency audit finds no known vulnerabilities. A live version `1.0` batch from gateway `0.3.0` was accepted by the local Aelora ingest endpoint with HTTP `201`; the retry queue remained empty.
 
 ## Real-equipment transition
 
