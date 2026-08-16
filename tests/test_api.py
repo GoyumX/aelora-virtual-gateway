@@ -1,4 +1,5 @@
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from aelora_virtual_gateway.main import create_app
@@ -114,3 +115,112 @@ def test_operator_can_start_and_stop_a_timed_scenario(tmp_path) -> None:
     assert stopped.status_code == 200
     assert restored["scenario"] is None
     assert restored["plant"]["grid"]["available"] is True
+
+
+def test_state_exposes_computer_clock_and_dynamic_control_configuration(tmp_path) -> None:
+    app = create_app(StateStore(tmp_path / "gateway.db"), start_publisher=False)
+
+    with TestClient(app) as client:
+        state = client.get("/api/state").json()
+
+    assert state["clock"]["mode"] == "SYSTEM"
+    assert state["clock"]["observedAt"]
+    assert state["clock"]["localDateTime"]
+    assert state["clock"]["timezone"]
+    assert state["plant"]["loadMode"] == "DYNAMIC"
+    assert state["plant"]["loadMinPowerW"] < state["plant"]["loadMaxPowerW"]
+
+
+def test_operator_can_configure_dynamic_household_range_and_cloud_variability(tmp_path) -> None:
+    app = create_app(StateStore(tmp_path / "gateway.db"), start_publisher=False)
+
+    with TestClient(app) as client:
+        environment = client.patch(
+            "/api/environment",
+            json={"clockMode": "SYSTEM", "cloudVariabilityPct": 40, "variationSeed": 812},
+        )
+        load = client.patch(
+            "/api/load",
+            json={"loadMode": "DYNAMIC", "loadMinPowerW": 2_200, "loadMaxPowerW": 3_000},
+        )
+        invalid = client.patch(
+            "/api/load",
+            json={"loadMode": "DYNAMIC", "loadMinPowerW": 3_100, "loadMaxPowerW": 2_000},
+        )
+        state = client.get("/api/state").json()
+
+    assert environment.status_code == 200
+    assert load.status_code == 200
+    assert invalid.status_code == 422
+    assert state["plant"]["environment"]["cloudVariabilityPct"] == 40
+    assert state["plant"]["environment"]["variationSeed"] == 812
+    assert state["plant"]["loadMinPowerW"] == 2_200
+    assert state["plant"]["loadMaxPowerW"] == 3_000
+
+
+def test_operator_can_configure_battery_capacity_charge_and_power_limits(tmp_path) -> None:
+    app = create_app(StateStore(tmp_path / "gateway.db"), start_publisher=False)
+
+    with TestClient(app) as client:
+        updated = client.patch(
+            "/api/battery",
+            json={
+                "capacityWh": 12_000,
+                "stateOfChargePct": 55,
+                "minSocPct": 15,
+                "maxSocPct": 90,
+                "maxChargePowerW": 4_000,
+                "maxDischargePowerW": 4_500,
+            },
+        )
+        invalid = client.patch("/api/battery", json={"minSocPct": 95, "maxSocPct": 20})
+        state = client.get("/api/state").json()
+
+    assert updated.status_code == 200
+    assert invalid.status_code == 422
+    assert state["plant"]["battery"]["capacityWh"] == 12_000
+    assert state["plant"]["battery"]["stateOfChargePct"] == 55
+    assert state["plant"]["battery"]["maxDischargePowerW"] == 4_500
+
+
+@pytest.mark.parametrize(
+    ("code", "path", "expected"),
+    [
+        ("PASSING_CLOUDS", ("environment", "cloudVariabilityPct"), 70),
+        ("LOAD_SPIKE", ("loadMinPowerW",), 4_500),
+        ("LOAD_DROP", ("loadMaxPowerW",), 1_000),
+        ("INVERTER_CLIPPING", ("inverter", "maxAcPowerW"), 2_500),
+        ("GRID_VOLTAGE_SAG", ("grid", "voltageV"), 195),
+        ("INVERTER_COMMS_LOSS", ("inverter", "communicationsEnabled"), False),
+        ("NIGHT_PREVIEW", ("environment", "hourOfDay"), 22),
+        ("BATTERY_DRAIN", ("loadMinPowerW",), 4_000),
+    ],
+)
+def test_expanded_timed_scenarios_apply_realistic_plant_changes(
+    tmp_path, code: str, path: tuple[str, ...], expected
+) -> None:
+    app = create_app(StateStore(tmp_path / f"{code}.db"), start_publisher=False)
+
+    with TestClient(app) as client:
+        started = client.post("/api/scenarios", json={"code": code, "durationSec": 60})
+        state = client.get("/api/state").json()["plant"]
+
+    value = state
+    for segment in path:
+        value = value[segment]
+    assert started.status_code == 201
+    assert value == expected
+
+
+def test_console_exposes_clock_load_range_battery_and_expanded_scenario_controls(tmp_path) -> None:
+    app = create_app(StateStore(tmp_path / "gateway.db"), start_publisher=False)
+
+    with TestClient(app) as client:
+        html = client.get("/").text
+
+    assert "Computer date & time" in html
+    assert "Minimum household load" in html
+    assert "Maximum household load" in html
+    assert "Battery capacity" in html
+    assert "Passing clouds" in html
+    assert "Grid voltage sag" in html
