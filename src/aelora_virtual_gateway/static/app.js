@@ -2,6 +2,10 @@ let state;
 const $ = (id) => document.getElementById(id);
 const fmtPower = (value) => `${(Math.abs(value || 0) / 1000).toFixed(2)} kW`;
 const numberValue = (id, multiplier = 1) => Number($(id).value) * multiplier;
+const dirtyInputs = new Set();
+const syncValue = (id, value) => { if (!dirtyInputs.has(id)) $(id).value = value; };
+const syncChecked = (id, value) => { if (!dirtyInputs.has(id)) $(id).checked = value; };
+const markClean = (...ids) => ids.forEach((id) => dirtyInputs.delete(id));
 
 function notice(message, error = false) {
   const node = $("notice");
@@ -47,34 +51,37 @@ function render() {
   $("metric-load").textContent = fmtPower(latest?.loadPowerW);
   $("metric-battery").textContent = `${latest?.batterySocPct?.toFixed(1) || 0}% · ${fmtPower(latest?.batteryPowerW)}`;
   $("metric-grid").textContent = `${(latest?.gridPowerW || 0) >= 0 ? "Import " : "Export "}${fmtPower(latest?.gridPowerW)}`;
-  $("clock-mode").value = plant.environment.clockMode;
-  $("weather").value = plant.environment.weather;
-  $("hour").value = plant.environment.hourOfDay;
-  $("hour").disabled = plant.environment.clockMode === "SYSTEM";
-  $("manual-hour-label").classList.toggle("disabled-control", plant.environment.clockMode === "SYSTEM");
-  $("hour-output").textContent = `${String(Math.floor(plant.environment.hourOfDay)).padStart(2, "0")}:${plant.environment.hourOfDay % 1 ? "30" : "00"}`;
-  $("temperature").value = plant.environment.ambientTemperatureC;
-  $("cloud-variability").value = plant.environment.cloudVariabilityPct;
-  $("variation-seed").value = plant.environment.variationSeed;
-  $("load-mode").value = plant.loadMode;
-  $("load-fixed").value = plant.loadPowerW;
-  $("load-min").value = plant.loadMinPowerW;
-  $("load-max").value = plant.loadMaxPowerW;
-  $("load-fixed").disabled = plant.loadMode === "DYNAMIC";
-  $("load-min").disabled = plant.loadMode === "FIXED";
-  $("load-max").disabled = plant.loadMode === "FIXED";
-  $("battery-capacity").value = (plant.battery.capacityWh / 1000).toFixed(1);
-  $("battery-soc").value = plant.battery.stateOfChargePct.toFixed(1);
-  $("battery-min-soc").value = plant.battery.minSocPct;
-  $("battery-max-soc").value = plant.battery.maxSocPct;
-  $("battery-charge-power").value = (plant.battery.maxChargePowerW / 1000).toFixed(1);
-  $("battery-discharge-power").value = (plant.battery.maxDischargePowerW / 1000).toFixed(1);
-  $("grid-voltage").value = plant.grid.voltageV;
-  $("grid-voltage-variability").value = plant.grid.voltageVariabilityPct;
-  $("grid-frequency").value = plant.grid.frequencyHz;
-  $("grid-frequency-variability").value = plant.grid.frequencyVariabilityHz;
-  $("publishing-enabled").checked = plant.publishingEnabled;
-  $("publish-interval").value = plant.publishIntervalSec;
+  syncValue("clock-mode", plant.environment.clockMode);
+  syncValue("weather", plant.environment.weather);
+  syncValue("hour", plant.environment.hourOfDay);
+  const displayedClockMode = dirtyInputs.has("clock-mode") ? $("clock-mode").value : plant.environment.clockMode;
+  $("hour").disabled = displayedClockMode === "SYSTEM";
+  $("manual-hour-label").classList.toggle("disabled-control", displayedClockMode === "SYSTEM");
+  const displayedHour = dirtyInputs.has("hour") ? Number($("hour").value) : plant.environment.hourOfDay;
+  $("hour-output").textContent = `${String(Math.floor(displayedHour)).padStart(2, "0")}:${displayedHour % 1 ? "30" : "00"}`;
+  syncValue("temperature", plant.environment.ambientTemperatureC);
+  syncValue("cloud-variability", plant.environment.cloudVariabilityPct);
+  syncValue("variation-seed", plant.environment.variationSeed);
+  syncValue("load-mode", plant.loadMode);
+  syncValue("load-fixed", plant.loadPowerW);
+  syncValue("load-min", plant.loadMinPowerW);
+  syncValue("load-max", plant.loadMaxPowerW);
+  const displayedLoadMode = dirtyInputs.has("load-mode") ? $("load-mode").value : plant.loadMode;
+  $("load-fixed").disabled = displayedLoadMode === "DYNAMIC";
+  $("load-min").disabled = displayedLoadMode === "FIXED";
+  $("load-max").disabled = displayedLoadMode === "FIXED";
+  syncValue("battery-capacity", (plant.battery.capacityWh / 1000).toFixed(1));
+  syncValue("battery-soc", plant.battery.stateOfChargePct.toFixed(1));
+  syncValue("battery-min-soc", plant.battery.minSocPct);
+  syncValue("battery-max-soc", plant.battery.maxSocPct);
+  syncValue("battery-charge-power", (plant.battery.maxChargePowerW / 1000).toFixed(1));
+  syncValue("battery-discharge-power", (plant.battery.maxDischargePowerW / 1000).toFixed(1));
+  syncValue("grid-voltage", plant.grid.voltageV);
+  syncValue("grid-voltage-variability", plant.grid.voltageVariabilityPct);
+  syncValue("grid-frequency", plant.grid.frequencyHz);
+  syncValue("grid-frequency-variability", plant.grid.frequencyVariabilityHz);
+  syncChecked("publishing-enabled", plant.publishingEnabled);
+  syncValue("publish-interval", plant.publishIntervalSec);
   $("publishing-badge").textContent = plant.publishingEnabled ? "Running" : "Paused";
   $("publishing-badge").className = `badge${plant.publishingEnabled ? "" : " warning"}`;
   $("scenario-badge").textContent = state.scenario?.code?.replaceAll("_", " ") || "None";
@@ -95,8 +102,10 @@ document.addEventListener("click", async (event) => {
     if (target.dataset.delete) { await api(`/api/arrays/${target.dataset.delete}`, { method: "DELETE" }); await refresh(); }
   } catch (error) { notice(error.message, true); }
 });
+document.addEventListener("input", (event) => { if (event.target.id) dirtyInputs.add(event.target.id); });
 document.addEventListener("change", async (event) => {
   const target = event.target;
+  if (target.id) dirtyInputs.add(target.id);
   if (!target.dataset.range) return;
   try { await mutate(`/api/devices/${target.dataset.range}/control`, { [target.dataset.key]: Number(target.value) }); } catch (error) { notice(error.message, true); }
 });
@@ -106,11 +115,11 @@ $("clock-mode").addEventListener("change", () => { const system = $("clock-mode"
 $("load-mode").addEventListener("change", () => { const dynamic = $("load-mode").value === "DYNAMIC"; $("load-fixed").disabled = dynamic; $("load-min").disabled = !dynamic; $("load-max").disabled = !dynamic; });
 $("show-add-array").addEventListener("click", () => $("add-array-form").classList.toggle("hidden"));
 $("add-array-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await mutate("/api/arrays", { externalId: $("array-id").value, name: $("array-name").value, panelCount: Number($("array-count").value), ratedPowerW: Number($("array-watts").value) }, "POST"); event.target.reset(); event.target.classList.add("hidden"); notice("Solar array added."); } catch (error) { notice(error.message, true); } });
-$("save-environment").addEventListener("click", async () => { try { await mutate("/api/environment", { clockMode: $("clock-mode").value, weather: $("weather").value, hourOfDay: numberValue("hour"), ambientTemperatureC: numberValue("temperature"), cloudVariabilityPct: numberValue("cloud-variability"), variationSeed: numberValue("variation-seed") }); notice("Virtual weather and clock settings applied."); } catch (error) { notice(error.message, true); } });
-$("save-load").addEventListener("click", async () => { try { await mutate("/api/load", { loadMode: $("load-mode").value, loadPowerW: numberValue("load-fixed"), loadMinPowerW: numberValue("load-min"), loadMaxPowerW: numberValue("load-max") }); notice("Household demand settings saved."); } catch (error) { notice(error.message, true); } });
-$("save-battery").addEventListener("click", async () => { try { await mutate("/api/battery", { capacityWh: numberValue("battery-capacity", 1000), stateOfChargePct: numberValue("battery-soc"), minSocPct: numberValue("battery-min-soc"), maxSocPct: numberValue("battery-max-soc"), maxChargePowerW: numberValue("battery-charge-power", 1000), maxDischargePowerW: numberValue("battery-discharge-power", 1000) }); notice("Battery capacity and operating limits saved."); } catch (error) { notice(error.message, true); } });
-$("save-grid").addEventListener("click", async () => { try { await mutate(`/api/devices/${state.plant.grid.externalId}/control`, { voltageV: numberValue("grid-voltage"), voltageVariabilityPct: numberValue("grid-voltage-variability"), frequencyHz: numberValue("grid-frequency"), frequencyVariabilityHz: numberValue("grid-frequency-variability") }); notice("Grid signal dynamics saved."); } catch (error) { notice(error.message, true); } });
-$("save-publishing").addEventListener("click", async () => { try { await mutate("/api/publishing", { enabled: $("publishing-enabled").checked, intervalSec: Number($("publish-interval").value) }); notice("Publishing settings saved."); } catch (error) { notice(error.message, true); } });
+$("save-environment").addEventListener("click", async () => { try { await mutate("/api/environment", { clockMode: $("clock-mode").value, weather: $("weather").value, hourOfDay: numberValue("hour"), ambientTemperatureC: numberValue("temperature"), cloudVariabilityPct: numberValue("cloud-variability"), variationSeed: numberValue("variation-seed") }); markClean("clock-mode", "weather", "hour", "temperature", "cloud-variability", "variation-seed"); notice("Virtual weather and clock settings applied."); } catch (error) { notice(error.message, true); } });
+$("save-load").addEventListener("click", async () => { try { await mutate("/api/load", { loadMode: $("load-mode").value, loadPowerW: numberValue("load-fixed"), loadMinPowerW: numberValue("load-min"), loadMaxPowerW: numberValue("load-max") }); markClean("load-mode", "load-fixed", "load-min", "load-max"); notice("Household demand settings saved."); } catch (error) { notice(error.message, true); } });
+$("save-battery").addEventListener("click", async () => { try { await mutate("/api/battery", { capacityWh: numberValue("battery-capacity", 1000), stateOfChargePct: numberValue("battery-soc"), minSocPct: numberValue("battery-min-soc"), maxSocPct: numberValue("battery-max-soc"), maxChargePowerW: numberValue("battery-charge-power", 1000), maxDischargePowerW: numberValue("battery-discharge-power", 1000) }); markClean("battery-capacity", "battery-soc", "battery-min-soc", "battery-max-soc", "battery-charge-power", "battery-discharge-power"); notice("Battery capacity and operating limits saved."); } catch (error) { notice(error.message, true); } });
+$("save-grid").addEventListener("click", async () => { try { await mutate(`/api/devices/${state.plant.grid.externalId}/control`, { voltageV: numberValue("grid-voltage"), voltageVariabilityPct: numberValue("grid-voltage-variability"), frequencyHz: numberValue("grid-frequency"), frequencyVariabilityHz: numberValue("grid-frequency-variability") }); markClean("grid-voltage", "grid-voltage-variability", "grid-frequency", "grid-frequency-variability"); notice("Grid signal dynamics saved."); } catch (error) { notice(error.message, true); } });
+$("save-publishing").addEventListener("click", async () => { try { await mutate("/api/publishing", { enabled: $("publishing-enabled").checked, intervalSec: Number($("publish-interval").value) }); markClean("publishing-enabled", "publish-interval"); notice("Publishing settings saved."); } catch (error) { notice(error.message, true); } });
 $("enrollment-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await mutate("/api/enroll", { token: $("enrollment-token").value }, "POST"); $("enrollment-token").value = ""; notice("Gateway enrolled with Aelora."); } catch (error) { notice(error.message, true); } });
 $("show-credential-form").addEventListener("click", () => $("credential-form").classList.toggle("hidden"));
 $("credential-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await mutate("/api/identity/credential", { credential: $("rotated-credential").value }); $("rotated-credential").value = ""; event.target.classList.add("hidden"); notice("Rotated credential saved locally. The next accepted request will activate it in Aelora."); } catch (error) { notice(error.message, true); } });
@@ -118,7 +127,7 @@ $("start-scenario").addEventListener("click", async () => { try { await mutate("
 $("stop-scenario").addEventListener("click", async () => { try { await api("/api/scenarios/current", { method: "DELETE" }); await refresh(); notice("Scenario stopped and baseline restored."); } catch (error) { notice(error.message, true); } });
 $("tick-now").addEventListener("click", async () => { try { await api("/api/tick", { method: "POST" }); await refresh(); notice("Simulation advanced by one tick."); } catch (error) { notice(error.message, true); } });
 $("publish-now").addEventListener("click", async () => { try { const result = await api("/api/publish-now", { method: "POST" }); await refresh(); notice(result.published ? "Batch accepted by Aelora." : "Aelora unavailable; batch buffered locally.", !result.published); } catch (error) { notice(error.message, true); } });
-$("reset-plant").addEventListener("click", async () => { if (!confirm("Reset the virtual plant to defaults?")) return; try { await api("/api/reset", { method: "POST" }); await refresh(); notice("Virtual plant reset."); } catch (error) { notice(error.message, true); } });
+$("reset-plant").addEventListener("click", async () => { if (!confirm("Reset the virtual plant to defaults?")) return; try { await api("/api/reset", { method: "POST" }); dirtyInputs.clear(); await refresh(); notice("Virtual plant reset."); } catch (error) { notice(error.message, true); } });
 
 refresh().catch((error) => notice(error.message, true));
 window.setInterval(() => refresh().catch(() => {}), 3000);
