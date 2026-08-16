@@ -226,3 +226,14 @@ def test_console_exposes_clock_load_range_battery_and_expanded_scenario_controls
     assert "Battery capacity" in html
     assert "Passing clouds" in html
     assert "Grid voltage sag" in html
+
+
+def test_console_live_refresh_preserves_controls_while_the_operator_is_editing(tmp_path) -> None:
+    app = create_app(StateStore(tmp_path / "gateway.db"), start_publisher=False)
+
+    with TestClient(app) as client:
+        javascript = client.get("/static/app.js").text
+
+    assert "const dirtyInputs = new Set();" in javascript
+    assert "if (!dirtyInputs.has(id))" in javascript
+    assert 'markClean("load-mode", "load-fixed", "load-min", "load-max")' in javascript
