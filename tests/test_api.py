@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from html import unescape
 
 import httpx
@@ -33,6 +34,7 @@ def test_operator_can_add_an_array_and_change_weather(tmp_path) -> None:
 def test_operator_can_turn_device_communications_off_without_stopping_plant(tmp_path) -> None:
     app = create_app(StateStore(tmp_path / "gateway.db"), start_publisher=False)
     with TestClient(app) as client:
+        client.patch("/api/environment", json={"clockMode": "MANUAL", "hourOfDay": 12})
         response = client.patch("/api/devices/array-east/control", json={"communicationsEnabled": False})
         tick = client.post("/api/tick")
 
@@ -51,6 +53,57 @@ def test_operator_can_pause_cloud_publishing(tmp_path) -> None:
     assert response.status_code == 200
     assert state.json()["plant"]["publishingEnabled"] is False
     assert state.json()["plant"]["publishIntervalSec"] == 60
+
+
+def test_publishing_change_immediately_synchronizes_cadence_with_aelora(tmp_path) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json={"data": {"accepted": True}})
+
+    store = StateStore(tmp_path / "gateway.db")
+    store.save_identity(
+        "gateway-1",
+        "credential-value-that-is-long-enough",
+        "/api/v1/gateways/gateway-1/telemetry-batches",
+        "/api/v1/gateways/gateway-1/heartbeats",
+    )
+    app = create_app(store, start_publisher=False, transport=httpx.MockTransport(handler))
+
+    with TestClient(app) as client:
+        response = client.patch("/api/publishing", json={"enabled": True, "intervalSec": 60})
+
+    assert response.status_code == 200
+    heartbeat = next(request for request in requests if request.url.path.endswith("/heartbeats"))
+    assert heartbeat.read().decode()
+    assert '"publishIntervalSec":60' in heartbeat.content.decode()
+
+
+def test_operator_can_replay_one_completed_simulated_hour_through_normal_ingestion(tmp_path) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json={"data": {"accepted": True}})
+
+    store = StateStore(tmp_path / "gateway.db")
+    store.save_identity(
+        "gateway-1",
+        "credential-value-that-is-long-enough",
+        "/api/v1/gateways/gateway-1/telemetry-batches",
+        "/api/v1/gateways/gateway-1/heartbeats",
+    )
+    app = create_app(store, start_publisher=False, transport=httpx.MockTransport(handler))
+    start = datetime.now(UTC).replace(minute=0, second=0, microsecond=0) - timedelta(hours=2)
+
+    with TestClient(app) as client:
+        response = client.post("/api/development/replay-hour", json={"startAt": start.isoformat()})
+
+    assert response.status_code == 200
+    assert response.json()["attempted"] == 120
+    assert response.json()["quality"] == "SIMULATED"
+    assert len(requests) == 120
 
 
 def test_operator_can_apply_a_staged_credential_without_echoing_it(tmp_path) -> None:
@@ -226,6 +279,9 @@ def test_console_exposes_clock_load_range_battery_and_expanded_scenario_controls
     assert "Battery capacity" in html
     assert "Passing clouds" in html
     assert "Grid voltage sag" in html
+    assert "Development replay" in html
+    assert 'id="replay-hour-start"' in html
+    assert 'id="replay-hour"' in html
 
 
 def test_console_live_refresh_preserves_controls_while_the_operator_is_editing(tmp_path) -> None:
@@ -235,5 +291,49 @@ def test_console_live_refresh_preserves_controls_while_the_operator_is_editing(t
         javascript = client.get("/static/app.js").text
 
     assert "const dirtyInputs = new Set();" in javascript
-    assert "if (!dirtyInputs.has(id))" in javascript
-    assert 'markClean("load-mode", "load-fixed", "load-min", "load-max")' in javascript
+    assert "if (!node || dirtyInputs.has(id)) return;" in javascript
+    assert "const syncText = (id, value) =>" in javascript
+    assert "const syncDisabled = (id, value) =>" in javascript
+    assert "const syncHtml = (id, value) =>" in javascript
+    assert "const displayedValue = (id, fallback) =>" in javascript
+    assert "const on = (id, eventName, listener) =>" in javascript
+    assert 'const displayedClockMode = displayedValue("clock-mode"' in javascript
+    assert 'syncDisabled("load-fixed"' in javascript
+    assert 'on("replay-hour", "click"' in javascript
+    assert 'api("/api/development/replay-hour"' in javascript
+    assert '$("hour").addEventListener' not in javascript
+    assert '$("reset-plant").addEventListener' not in javascript
+    assert "markClean(...cleanIds);\n  await refresh();" in javascript
+
+
+def test_console_assets_are_never_reused_across_incompatible_versions(tmp_path) -> None:
+    app = create_app(StateStore(tmp_path / "gateway.db"), start_publisher=False)
+
+    with TestClient(app) as client:
+        console = client.get("/")
+        javascript = client.get("/static/app.js")
+
+    assert console.headers["cache-control"] == "no-store"
+    assert javascript.headers["cache-control"] == "no-store"
+
+
+def test_reset_only_resets_the_plant_and_immediately_produces_a_fresh_tick(tmp_path) -> None:
+    store = StateStore(tmp_path / "gateway.db")
+    store.save_identity(
+        "gateway-1",
+        "credential-value-that-is-long-enough",
+        "/api/v1/gateways/gateway-1/telemetry-batches",
+    )
+    assert store.next_sequence() == 1
+    store.enqueue({"batchId": "pending-1", "gatewayId": "gateway-1", "sequence": 1})
+    app = create_app(store, start_publisher=False)
+
+    with TestClient(app) as client:
+        reset = client.post("/api/reset")
+        state = client.get("/api/state").json()
+
+    assert reset.status_code == 200
+    assert state["gateway"]["enrolled"] is True
+    assert state["gateway"]["pendingBatches"] == 1
+    assert state["latest"] is not None
+    assert store.next_sequence() == 2

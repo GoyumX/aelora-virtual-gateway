@@ -71,6 +71,7 @@ def test_heartbeat_reports_gateway_health_when_telemetry_publishing_is_paused(tm
 
     assert publisher.heartbeat(
         publishing_enabled=False,
+        publish_interval_sec=60,
         queue_depth=2,
         device_count=7,
         heartbeat_id="52bcdd2b-cc48-4677-aac4-f987789724f5",
@@ -81,7 +82,49 @@ def test_heartbeat_reports_gateway_health_when_telemetry_publishing_is_paused(tm
     assert requests[0].headers["Authorization"] == "Bearer credential"
     payload = json.loads(requests[0].content)
     assert payload["publishingEnabled"] is False
+    assert payload["publishIntervalSec"] == 60
     assert payload["queueDepth"] == 2
+
+
+def test_completed_hour_replay_uses_the_normal_authenticated_batch_path_without_mutating_live_state(
+    tmp_path,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json={"data": {"accepted": True}})
+
+    store = StateStore(tmp_path / "gateway.db")
+    store.save_identity(
+        "gateway-1",
+        "credential",
+        "/api/v1/gateways/gateway-1/telemetry-batches",
+        "/api/v1/gateways/gateway-1/heartbeats",
+    )
+    runtime = GatewayRuntime(store, "http://aelora.test", transport=httpx.MockTransport(handler))
+    start = datetime(2026, 8, 21, 7, 0, tzinfo=UTC)
+    initial_soc = runtime.plant.battery.state_of_charge_pct
+
+    result = runtime.replay_completed_hour(start, now=start + timedelta(hours=2))
+
+    assert result == {
+        "startAt": start.isoformat(),
+        "endAt": (start + timedelta(hours=1)).isoformat(),
+        "intervalSec": 30,
+        "attempted": 120,
+        "accepted": 120,
+        "buffered": 0,
+        "quality": "SIMULATED",
+    }
+    payloads = [json.loads(request.content) for request in requests]
+    assert payloads[0]["siteSnapshot"]["observedAt"] == start.isoformat().replace("+00:00", "Z")
+    assert payloads[-1]["siteSnapshot"]["observedAt"] == (
+        start + timedelta(minutes=59, seconds=30)
+    ).isoformat().replace("+00:00", "Z")
+    assert all(request.headers["Authorization"] == "Bearer credential" for request in requests)
+    assert runtime.plant.battery.state_of_charge_pct == initial_soc
+    assert runtime.latest is None
 
 
 def test_heartbeat_restores_an_expired_scenario_while_publishing_is_paused(tmp_path) -> None:

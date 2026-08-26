@@ -5,10 +5,11 @@ import contextlib
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
@@ -33,6 +34,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 class EnrollmentRequest(BaseModel):
     token: str = Field(min_length=32, max_length=256)
+
+
+class ReplayHourRequest(BaseModel):
+    start_at: datetime = Field(alias="startAt")
 
 
 async def publisher_loop(runtime: GatewayRuntime) -> None:
@@ -69,6 +74,14 @@ def create_app(
         runtime.close()
 
     app = FastAPI(title="Aelora Virtual Gateway", version=__version__, lifespan=lifespan)
+
+    @app.middleware("http")
+    async def prevent_console_version_mismatch(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", include_in_schema=False)
@@ -150,9 +163,11 @@ def create_app(
         if payload.interval_sec is not None:
             runtime.plant.publish_interval_sec = payload.interval_sec
         runtime.save()
+        cadence_synchronized = runtime.heartbeat_once()
         return {
             "enabled": runtime.plant.publishing_enabled,
             "intervalSec": runtime.plant.publish_interval_sec,
+            "cadenceSynchronized": cadence_synchronized,
         }
 
     @app.patch("/api/load")
@@ -198,6 +213,15 @@ def create_app(
         if not runtime.store.load_identity():
             raise HTTPException(status_code=409, detail="Enroll this gateway first.")
         return {"published": runtime.publish_once(), "pendingBatches": runtime.store.pending_count()}
+
+    @app.post("/api/development/replay-hour")
+    def replay_hour(payload: ReplayHourRequest) -> dict:
+        if not runtime.store.load_identity():
+            raise HTTPException(status_code=409, detail="Enroll this gateway before replaying data.")
+        try:
+            return runtime.replay_completed_hour(payload.start_at)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.patch("/api/identity/credential")
     def update_credential(payload: CredentialUpdate) -> dict:

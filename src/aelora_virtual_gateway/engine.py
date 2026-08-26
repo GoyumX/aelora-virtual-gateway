@@ -33,9 +33,8 @@ class SimulationEngine:
         local = self.local_time(observed_at)
         return local.hour + local.minute / 60 + local.second / 3_600
 
-    def _interval_random(self, observed_at: datetime, channel: str) -> random.Random:
-        slot = int(observed_at.timestamp()) // self.state.publish_interval_sec
-        seed = f"{self.state.environment.variation_seed}:{slot}:{channel}"
+    def _anchor_random(self, channel: str, anchor: int) -> random.Random:
+        seed = f"{self.state.environment.variation_seed}:{channel}:{anchor}"
         return random.Random(seed)
 
     def _dynamic_value(
@@ -44,10 +43,17 @@ class SimulationEngine:
         channel: str,
         minimum: float,
         maximum: float,
+        *,
+        transition_sec: int = 900,
     ) -> float:
         if minimum == maximum:
             return minimum
-        return self._interval_random(observed_at, channel).uniform(minimum, maximum)
+        position = observed_at.timestamp() / transition_sec
+        lower_anchor = math.floor(position)
+        progress = position - lower_anchor
+        lower = self._anchor_random(channel, lower_anchor).uniform(minimum, maximum)
+        upper = self._anchor_random(channel, lower_anchor + 1).uniform(minimum, maximum)
+        return lower + (upper - lower) * progress
 
     def _integration_hours(self, observed_at: datetime) -> float:
         local_date = self.local_time(observed_at).date()
@@ -74,7 +80,13 @@ class SimulationEngine:
         else:
             clear_irradiance = 1_000 * daylight * WEATHER_FACTOR[environment.weather]
             cloud_floor = max(0.0, 1 - environment.cloud_variability_pct / 100)
-            cloud_factor = self._dynamic_value(now, "cloud", cloud_floor, 1.0)
+            cloud_factor = self._dynamic_value(
+                now,
+                "cloud",
+                cloud_floor,
+                1.0,
+                transition_sec=480,
+            )
             irradiance = round(clear_irradiance * cloud_factor)
 
         array_power: dict[str, float] = {}
@@ -102,6 +114,7 @@ class SimulationEngine:
                 "household-load",
                 self.state.load_min_power_w,
                 self.state.load_max_power_w,
+                transition_sec=900,
             )
             if self.state.load_mode == "DYNAMIC"
             else float(self.state.load_power_w)
@@ -142,12 +155,14 @@ class SimulationEngine:
                 "grid-voltage",
                 max(0.0, self.state.grid.voltage_v - voltage_variation),
                 self.state.grid.voltage_v + voltage_variation,
+                transition_sec=120,
             )
             frequency = self._dynamic_value(
                 now,
                 "grid-frequency",
                 max(0.0, self.state.grid.frequency_hz - self.state.grid.frequency_variability_hz),
                 self.state.grid.frequency_hz + self.state.grid.frequency_variability_hz,
+                transition_sec=120,
             )
         device_status = self._device_status()
         snapshot = SiteSnapshot(

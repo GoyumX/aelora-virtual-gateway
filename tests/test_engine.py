@@ -130,3 +130,39 @@ def test_seeded_variation_is_reproducible_for_the_same_interval() -> None:
     assert first.site_snapshot.load_power_w == second.site_snapshot.load_power_w
     assert first.site_snapshot.irradiance_wm2 == second.site_snapshot.irradiance_wm2
     assert first.site_snapshot.grid_power_w == second.site_snapshot.grid_power_w
+
+
+def test_dynamic_signals_change_smoothly_instead_of_jumping_each_publish_interval() -> None:
+    data = manual_state().model_dump()
+    data.update(
+        {
+            "load_mode": "DYNAMIC",
+            "load_min_power_w": 1_200,
+            "load_max_power_w": 5_000,
+            "publish_interval_sec": 30,
+        }
+    )
+    data["environment"].update({"cloud_variability_pct": 45, "variation_seed": 812})
+    data["battery"]["operating"] = False
+    data["inverter"]["max_ac_power_w"] = 20_000
+    engine = SimulationEngine(PlantState.model_validate(data), local_timezone=UTC)
+
+    snapshots = [
+        engine.tick(datetime(2026, 8, 16, 12, 0, tzinfo=UTC) + timedelta(seconds=30 * index)).site_snapshot
+        for index in range(21)
+    ]
+
+    adjacent = zip(snapshots, snapshots[1:], strict=False)
+    load_steps = [
+        abs(current.load_power_w - previous.load_power_w)
+        for previous, current in adjacent
+    ]
+    adjacent = zip(snapshots, snapshots[1:], strict=False)
+    irradiance_steps = [
+        abs(current.irradiance_wm2 - previous.irradiance_wm2)
+        for previous, current in adjacent
+    ]
+    assert max(load_steps) < 350
+    assert max(irradiance_steps) < 90
+    assert len({snapshot.load_power_w for snapshot in snapshots}) > 5
+    assert len({snapshot.irradiance_wm2 for snapshot in snapshots}) > 5

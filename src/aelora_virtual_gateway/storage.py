@@ -140,5 +140,4 @@ class StateStore:
 
     def reset(self) -> None:
         with self._connect() as connection:
-            connection.execute("DELETE FROM settings WHERE key IN ('plant', 'sequence')")
-            connection.execute("DELETE FROM pending_batches")
+            connection.execute("DELETE FROM settings WHERE key = 'plant'")

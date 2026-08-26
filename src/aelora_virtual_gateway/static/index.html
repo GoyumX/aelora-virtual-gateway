@@ -70,6 +70,14 @@
           </article>
 
           <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Development replay</p><h2>Prove one completed hour</h2></div><span class="badge warning">Simulator only</span></div>
+            <p class="muted">Send one already-completed hour through the normal authenticated gateway path at the configured cadence. This is test evidence—not live sensor history—and Aelora will permanently label it simulated and block model promotion.</p>
+            <label>Completed forecast hour<input id="replay-hour-start" type="datetime-local" step="1800" /></label>
+            <button class="button full" id="replay-hour" type="button">Replay simulated hour</button>
+            <p class="muted">Use a completed time shown by Aelora. Repeating the same hour is safe: Aelora treats matching site/source/timestamps idempotently.</p>
+          </article>
+
+          <article class="panel">
             <div class="panel-heading"><div><p class="eyebrow">Timed controls</p><h2>Scenario runner</h2></div><span id="scenario-badge" class="badge warning">None</span></div>
             <div class="form-grid scenario-grid"><label>Scenario<select id="scenario-code"><option value="CLOUD_RAMP">Cloud ramp</option><option value="PASSING_CLOUDS">Passing clouds</option><option value="RAIN_DAY">Rainy day</option><option value="DIRTY_ARRAY">Dirty array</option><option value="PARTIAL_SHADE">Partial shade</option><option value="LOAD_SPIKE">Household load spike</option><option value="LOAD_DROP">Household load drop</option><option value="INVERTER_CLIPPING">Inverter clipping</option><option value="INVERTER_FAULT">Inverter fault</option><option value="INVERTER_COMMS_LOSS">Inverter communications loss</option><option value="BATTERY_LOW">Battery low</option><option value="BATTERY_DRAIN">Battery drain window</option><option value="GRID_VOLTAGE_SAG">Grid voltage sag</option><option value="GRID_OUTAGE">Grid outage</option><option value="NIGHT_PREVIEW">Night preview</option></select></label><label>Duration (seconds)<input id="scenario-duration" type="number" min="10" max="86400" value="300" /></label></div>
             <div class="device-actions"><button class="button primary" id="start-scenario" type="button">Start scenario</button><button class="button" id="stop-scenario" type="button">Stop and restore</button></div>

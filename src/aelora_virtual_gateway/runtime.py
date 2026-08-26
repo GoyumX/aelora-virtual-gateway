@@ -97,9 +97,57 @@ class GatewayRuntime:
             self.tick(now)
         return self.publisher.heartbeat(
             publishing_enabled=self.plant.publishing_enabled,
+            publish_interval_sec=self.plant.publish_interval_sec,
             queue_depth=self.store.pending_count(),
             device_count=len(self.latest.devices) if self.latest else 0,
         )
+
+    def replay_completed_hour(
+        self,
+        start_at: datetime,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, str | int]:
+        identity = self.store.load_identity()
+        if not identity:
+            raise ValueError("Enroll this gateway before running a development replay.")
+        if start_at.tzinfo is None or start_at.utcoffset() is None:
+            raise ValueError("Replay startAt must include a timezone offset.")
+        start = start_at.astimezone(UTC)
+        current = (now or datetime.now(UTC)).astimezone(UTC)
+        if start.minute or start.second or start.microsecond:
+            raise ValueError("Replay startAt must align to the beginning of a UTC forecast hour.")
+        end = start + timedelta(hours=1)
+        if end > current:
+            raise ValueError("Only a fully completed hour can be replayed.")
+        if current - start > timedelta(days=7):
+            raise ValueError("Replay startAt is outside Aelora's seven-day replay window.")
+
+        with self.lock:
+            interval_sec = self.plant.publish_interval_sec
+            replay_engine = SimulationEngine(
+                self.plant.model_copy(deep=True),
+                local_timezone=self.engine.local_timezone,
+            )
+            attempted = 0
+            accepted = 0
+            for offset_sec in range(0, 3_600, interval_sec):
+                tick = replay_engine.tick(start + timedelta(seconds=offset_sec))
+                sequence = self.store.next_sequence()
+                batch = tick.to_batch(identity.gateway_id, sequence, str(uuid4()))
+                attempted += 1
+                if self.publisher.publish(batch):
+                    accepted += 1
+
+        return {
+            "startAt": start.isoformat(),
+            "endAt": end.isoformat(),
+            "intervalSec": interval_sec,
+            "attempted": attempted,
+            "accepted": accepted,
+            "buffered": attempted - accepted,
+            "quality": "SIMULATED",
+        }
 
     def update_credential(self, credential: str) -> bool:
         return self.store.update_credential(credential)
@@ -199,7 +247,7 @@ class GatewayRuntime:
             self._scenario_baseline = None
             self.scenario_code = None
             self.scenario_ends_at = None
-            self.save()
+            self.tick()
             return self.plant
 
     def close(self) -> None:

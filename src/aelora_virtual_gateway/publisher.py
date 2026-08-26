@@ -92,6 +92,7 @@ class AeloraPublisher:
         self,
         *,
         publishing_enabled: bool,
+        publish_interval_sec: int,
         queue_depth: int,
         device_count: int,
         heartbeat_id: str | None = None,
@@ -108,6 +109,7 @@ class AeloraPublisher:
             "sentAt": timestamp.isoformat(),
             "softwareVersion": __version__,
             "publishingEnabled": publishing_enabled,
+            "publishIntervalSec": publish_interval_sec,
             "queueDepth": queue_depth,
             "deviceCount": device_count,
         }

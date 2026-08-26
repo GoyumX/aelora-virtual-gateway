@@ -8,15 +8,18 @@ It provides:
 - virtual arrays, inverter, battery, grid, load meter, and weather sensor;
 - independent communications and operating controls;
 - computer-local date/time by default, plus a manual time-of-day preview for controlled demos;
-- seeded 30-second cloud, household-load, grid-voltage, and grid-frequency variation;
+- seeded, time-correlated cloud, household-load, grid-voltage, and grid-frequency variation that changes smoothly between publish intervals;
 - fixed or min/max household demand, battery capacity/SoC/power limits, weather, efficiency, shading, soiling, grid-outage, and publishing controls;
 - timed cloud, rain, load, dirty-array, shade, inverter, battery, night, and grid scenarios with automatic restoration;
 - carried battery state of charge, inverter clipping, and balanced site power flow;
 - one-time enrollment with Aelora and a long-lived bearer credential stored only in the local SQLite database;
 - a separate heartbeat stream that stays active when telemetry publishing is paused;
+- heartbeat cadence synchronization so Aelora's completeness calculation follows the gateway's saved 10–3600 second publishing interval;
+- an explicitly labelled development replay that sends one completed simulated hour through the normal authenticated HTTP path without changing live plant state;
 - safe local credential rotation and an exact outbound request preview with bearer values redacted;
 - fixture-backed SunSpec and Fronius normalizers that produce the same canonical hardware telemetry shape;
-- monotonic sequences, UUID batch IDs, idempotent delivery, and a persistent retry buffer.
+- monotonic sequences, UUID batch IDs, idempotent delivery, and a persistent retry buffer;
+- a plant-only reset that restores equipment defaults without discarding enrollment, delivery sequence, or buffered telemetry.
 
 ## Run the prepared local project
 
@@ -61,12 +64,15 @@ When Aelora rotates a credential, paste the newly issued credential into **Rotat
 | Turn a device's communications off | Only that device reports offline; its last telemetry timestamp is preserved |
 | Stop device operation with communications on | Device remains online and reports `STOPPED` or `FAULT` |
 | Select rain/night or add shade/soiling | Device remains online with legitimately reduced production |
-| Set a household min/max range | Each telemetry interval gets a reproducible demand inside the range |
-| Change cloud variability | PV changes naturally by interval while remaining bounded by weather and daylight |
+| Change the publishing interval | The next heartbeat immediately synchronizes Aelora's expected cadence |
+| Replay a completed simulator hour | Sends one hour at the configured cadence through normal ingestion; records remain `SIMULATED` and cannot promote the model |
+| Set a household min/max range | Demand follows a reproducible continuous curve inside the range instead of jumping to an unrelated value every interval |
+| Change cloud variability | PV follows a smooth, seeded cloud curve while remaining bounded by weather and daylight |
 | Change battery capacity or SoC | Capacity changes the SoC response rate; SoC sets the current stored-energy state |
 | Change grid signal variability | Voltage/frequency fluctuate around their configured nominal values; power remains balance-derived |
 | Trigger grid outage | Grid remains communicative but reports a fault, zero voltage, and zero grid flow |
 | Start a timed scenario | The selected condition applies for the requested duration and then restores the previous plant state, even while telemetry is paused |
+| Reset plant state | Default equipment and conditions are restored immediately; enrollment, sequence continuity, and buffered telemetry are preserved |
 
 ## Verification
 
@@ -77,7 +83,18 @@ $env:PYTHONPATH = "src"
 .\.venv\Scripts\pip-audit.exe --skip-editable
 ```
 
-Current result: 33 tests pass, total Python coverage is 89.97%, lint and bytecode compilation pass, and the dependency audit finds no known vulnerabilities. A live version `1.0` batch from gateway `0.3.0` was accepted by the local Aelora ingest endpoint with HTTP `201`; the retry queue remained empty.
+Current result: 38 tests pass, total Python coverage is 91.34%, lint, JavaScript syntax, and bytecode compilation pass, and the dependency audit finds no known vulnerabilities. A live development replay sent 120 authenticated 30-second samples for one completed hour; Aelora accepted all 120, the retry queue stayed empty, and repeating the same hour remained idempotent.
+
+### Development verification replay
+
+Use this only to prove the simulator-to-verification pipeline without waiting an hour in real time:
+
+1. Keep Aelora and this enrolled gateway running.
+2. In Aelora, identify a completed forecast hour with missing simulator telemetry.
+3. Under **Development replay**, select that completed local date/time and choose **Replay simulated hour**.
+4. In Aelora AI Forecast, choose **Refresh actuals**.
+
+The replay is limited to a complete hour within Aelora's seven-day replay window. It uses the saved cadence and normal bearer-authenticated batch endpoint. It does not alter the gateway's live clock, current measurement, plant settings, or battery state. Repeated site/source/timestamps are idempotent. These labels are permanently `SIMULATED` and are always blocked from production model promotion.
 
 ## Real-equipment transition
 
