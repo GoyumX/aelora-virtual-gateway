@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from aelora_virtual_gateway.main import create_app
 from aelora_virtual_gateway.storage import StateStore
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

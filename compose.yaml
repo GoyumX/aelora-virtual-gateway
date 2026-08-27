@@ -1,0 +1,19 @@
+services:
+  gateway:
+    build:
+      context: .
+    init: true
+    restart: unless-stopped
+    environment:
+      AELORA_BASE_URL: "${AELORA_BASE_URL:-http://host.docker.internal:3000}"
+      AELORA_GATEWAY_HOST: 0.0.0.0
+      AELORA_GATEWAY_PORT: 4100
+      AELORA_GATEWAY_DB: /app/data/gateway.db
+      AELORA_GATEWAY_RELOAD: "false"
+    ports:
+      - "127.0.0.1:4100:4100"
+    volumes:
+      - gateway-data:/app/data
+
+volumes:
+  gateway-data:

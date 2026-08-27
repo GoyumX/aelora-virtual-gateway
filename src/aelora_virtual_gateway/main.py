@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
@@ -87,6 +87,11 @@ def create_app(
     @app.get("/", include_in_schema=False)
     def console() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/api/health")
+    def health(response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        return {"status": "ok", "version": __version__}
 
     @app.get("/api/state")
     def get_state() -> dict:
