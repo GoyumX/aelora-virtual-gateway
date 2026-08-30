@@ -13,8 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_local_container_contract_preserves_state_and_limits_console_exposure() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    entrypoint = (ROOT / "docker-entrypoint.sh").read_text(encoding="utf-8")
 
-    assert "USER aelora" in dockerfile
+    assert 'ENTRYPOINT ["/usr/local/bin/gateway-entrypoint"]' in dockerfile
+    assert 'exec gosu aelora "$@"' in entrypoint
     assert "AELORA_GATEWAY_DB=/app/data/gateway.db" in dockerfile
     assert "127.0.0.1:4100:4100" in compose
     assert "/app/data" in compose

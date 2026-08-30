@@ -10,17 +10,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN addgroup --system aelora && adduser --system --ingroup aelora aelora
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && addgroup --system aelora \
+    && adduser --system --ingroup aelora aelora
 
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN python -m pip install --no-cache-dir . && mkdir -p /app/data && chown -R aelora:aelora /app/data
+COPY docker-entrypoint.sh /usr/local/bin/gateway-entrypoint
+RUN python -m pip install --no-cache-dir . \
+    && mkdir -p /app/data \
+    && chown aelora:aelora /app/data \
+    && chmod 0755 /usr/local/bin/gateway-entrypoint
 
-USER aelora
 EXPOSE 4100
 VOLUME ["/app/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4100/api/health', timeout=3)"]
+  CMD ["python", "-c", "import os,urllib.request; p=os.getenv('PORT',os.getenv('AELORA_GATEWAY_PORT','4100')); urllib.request.urlopen(f'http://127.0.0.1:{p}/api/health',timeout=3)"]
 
+ENTRYPOINT ["/usr/local/bin/gateway-entrypoint"]
 CMD ["aelora-virtual-gateway"]

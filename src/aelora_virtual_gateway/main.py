@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import contextlib
 import os
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
@@ -30,6 +34,58 @@ from .runtime import GatewayRuntime
 from .storage import StateStore
 
 STATIC_DIR = Path(__file__).parent / "static"
+PUBLIC_DEMO_AUTH_REALM = "Aelora Virtual Gateway"
+
+
+@dataclass(frozen=True)
+class ConsoleAuth:
+    enabled: bool
+    username: bytes = b""
+    password: bytes = b""
+
+
+def _read_boolean_environment(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be true or false.")
+
+
+def _load_console_auth() -> ConsoleAuth:
+    if not _read_boolean_environment("AELORA_GATEWAY_PUBLIC_DEMO"):
+        return ConsoleAuth(enabled=False)
+
+    username = os.getenv("AELORA_GATEWAY_CONSOLE_USERNAME", "").strip()
+    password = os.getenv("AELORA_GATEWAY_CONSOLE_PASSWORD", "")
+    if not username or ":" in username or len(password) < 16:
+        raise ValueError(
+            "Public demo mode requires a username without ':' and a console password "
+            "of at least 16 characters."
+        )
+    return ConsoleAuth(enabled=True, username=username.encode(), password=password.encode())
+
+
+def _has_valid_basic_credentials(authorization: str | None, auth: ConsoleAuth) -> bool:
+    if not authorization:
+        return False
+    scheme, separator, encoded = authorization.partition(" ")
+    if not separator or scheme.lower() != "basic" or not encoded:
+        return False
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    username, separator, password = decoded.partition(b":")
+    if not separator:
+        return False
+    username_matches = secrets.compare_digest(username, auth.username)
+    password_matches = secrets.compare_digest(password, auth.password)
+    return username_matches & password_matches
 
 
 class EnrollmentRequest(BaseModel):
@@ -54,6 +110,7 @@ def create_app(
     start_publisher: bool = True,
     transport: httpx.BaseTransport | None = None,
 ) -> FastAPI:
+    console_auth = _load_console_auth()
     database_path = os.getenv("AELORA_GATEWAY_DB", "data/gateway.db")
     runtime = GatewayRuntime(
         store or StateStore(database_path),
@@ -74,6 +131,23 @@ def create_app(
         runtime.close()
 
     app = FastAPI(title="Aelora Virtual Gateway", version=__version__, lifespan=lifespan)
+
+    @app.middleware("http")
+    async def protect_public_demo(request: Request, call_next):
+        if (
+            console_auth.enabled
+            and request.url.path != "/api/health"
+            and not _has_valid_basic_credentials(request.headers.get("Authorization"), console_auth)
+        ):
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": "Authentication required."},
+                headers={
+                    "WWW-Authenticate": f'Basic realm="{PUBLIC_DEMO_AUTH_REALM}"',
+                    "Cache-Control": "no-store",
+                },
+            )
+        return await call_next(request)
 
     @app.middleware("http")
     async def prevent_console_version_mismatch(request: Request, call_next):
