@@ -5,6 +5,7 @@ This is the separately runnable Python virtual solar-site gateway for Aelora. It
 It provides:
 
 - a local control console at `http://localhost:4100`;
+- an optional password-protected public demo mode for a hosted showcase;
 - virtual arrays, inverter, battery, grid, load meter, and weather sensor;
 - independent communications and operating controls;
 - computer-local date/time by default, plus a manual time-of-day preview for controlled demos;
@@ -31,6 +32,18 @@ cd C:\Users\GoYuM\Documents\ChatGPT\Aelora\Project\aelora-virtual-gateway
 ```
 
 Open [http://localhost:4100](http://localhost:4100).
+
+## Optional hosted showcase
+
+For an undergraduate presentation, this virtual gateway can also run as a
+separate Railway service with a public, password-protected control console. The
+hosted service continuously publishes simulated equipment telemetry to Aelora,
+so you can operate arrays, weather, load, battery, grid, and timed scenarios
+from any presentation computer.
+
+Follow [the hosted Railway demo guide](docs/RAILWAY_HOSTED_DEMO.md). Keep the
+normal localhost deployment for a real solar installation; the hosted option is
+for demonstrations and does not represent an on-site hardware gateway.
 
 ## Fresh setup
 
@@ -83,7 +96,12 @@ $env:PYTHONPATH = "src"
 .\.venv\Scripts\pip-audit.exe --skip-editable
 ```
 
-Current result: 38 tests pass, total Python coverage is 91.34%, lint, JavaScript syntax, and bytecode compilation pass, and the dependency audit finds no known vulnerabilities. A live development replay sent 120 authenticated 30-second samples for one completed hour; Aelora accepted all 120, the retry queue stayed empty, and repeating the same hour remained idempotent.
+Current result: 48 tests pass, total Python coverage is 91.51%, lint,
+JavaScript syntax, and bytecode compilation pass, and the dependency audit
+finds no known vulnerabilities. A live development replay sent 120
+authenticated 30-second samples for one completed hour; Aelora accepted all
+120, the retry queue stayed empty, and repeating the same hour remained
+idempotent.
 
 ### Development verification replay
 
